@@ -1,0 +1,16 @@
+export const radii = {
+  xs: 4,
+  sm: 7,
+  md: 9,
+  control: 11,
+  cardSmall: 12,
+  field: 13,
+  button: 14,
+  card: 18,
+  cardLarge: 20,
+  pill: 22,
+  sheet: 27,
+  screen: 40,
+  device: 48,
+  full: 999,
+} as const;
