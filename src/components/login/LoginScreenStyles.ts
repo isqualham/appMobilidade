@@ -64,11 +64,12 @@ export const styles = StyleSheet.create({
   },
 
   inputContainer: {
-    height: 60,
+    minHeight: 60,
     borderWidth: 1,
     borderColor: theme.colors.semantic.borderDefault,
     borderRadius: theme.radii.button,
     paddingHorizontal: theme.spacing.xxxxl,
+    paddingVertical: theme.spacing.md,
     justifyContent: "center",
     marginBottom: theme.spacing.xl,
   },
@@ -84,6 +85,12 @@ export const styles = StyleSheet.create({
     padding: theme.spacing.none,
     fontSize: theme.typography.fontSize.metric,
     color: theme.colors.semantic.textPrimary,
+  },
+
+  errorText: {
+    color: "#DC2626",
+    fontSize: 12,
+    marginTop: theme.spacing.xs,
   },
 
   forgotButton: {

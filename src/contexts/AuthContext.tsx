@@ -1,13 +1,13 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import type { AuthCredentials, User } from "../services/auth/auth.types";
-import { signIn } from "../services/auth/auth.service";
+import { clearAuthToken, signIn } from "../services/auth/auth.service";
 
 interface AuthContextData {
   user: User | null;
   isAuthenticated: boolean;
   signInWithCredentials: (credentials: AuthCredentials) => Promise<void>;
-  signOut: () => void;
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextData | undefined>(undefined);
@@ -19,12 +19,15 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
 
-  async function signInWithCredentials(credentials: AuthCredentials) {
+  async function signInWithCredentials(
+    credentials: AuthCredentials,
+  ): Promise<void> {
     const authenticatedUser = await signIn(credentials);
     setUser(authenticatedUser);
   }
 
-  function signOut() {
+  async function signOut(): Promise<void> {
+    await clearAuthToken();
     setUser(null);
   }
 

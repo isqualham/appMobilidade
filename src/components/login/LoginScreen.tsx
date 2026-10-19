@@ -14,24 +14,76 @@ import { Lucide } from "@react-native-vector-icons/lucide";
 
 import { colors } from "../../theme";
 import { useAuth } from "../../contexts/AuthContext";
+import { loginSchema } from "../../services/auth/login.schema";
 import Logo from "../../../assets/viau-logo.svg";
 import { styles } from "./LoginScreenStyles";
 
 const ICON_SIZE = 22;
 const ICON_COLOR = "#475569";
 
+type LoginErrors = {
+  email?: string;
+  password?: string;
+};
+
 export function LoginScreen() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [errors, setErrors] = useState<LoginErrors>({});
   const [isLoading, setIsLoading] = useState(false);
 
   const { signInWithCredentials } = useAuth();
 
+  function handleEmailChange(value: string) {
+    setEmail(value);
+
+    const result = loginSchema.shape.email.safeParse(value);
+
+    setErrors((previous) => ({
+      ...previous,
+      email: result.success
+        ? undefined
+        : previous.email
+          ? result.error.issues[0]?.message
+          : undefined,
+    }));
+  }
+
+  function handlePasswordChange(value: string) {
+    setSenha(value);
+
+    const result = loginSchema.shape.password.safeParse(value);
+
+    setErrors((previous) => ({
+      ...previous,
+      password: result.success
+        ? undefined
+        : previous.password
+          ? result.error.issues[0]?.message
+          : undefined,
+    }));
+  }
+
   async function handleLogin() {
     if (isLoading) return;
 
-    if (!email.trim() || !senha) {
-      Alert.alert("Atenção", "Preencha seu e-mail e sua senha.");
+    const result = loginSchema.safeParse({
+      email,
+      password: senha,
+    });
+
+    if (!result.success) {
+      const nextErrors: LoginErrors = {};
+
+      for (const issue of result.error.issues) {
+        const field = issue.path[0];
+
+        if ((field === "email" || field === "password") && !nextErrors[field]) {
+          nextErrors[field] = issue.message;
+        }
+      }
+
+      setErrors(nextErrors);
       return;
     }
 
@@ -39,8 +91,8 @@ export function LoginScreen() {
       setIsLoading(true);
 
       await signInWithCredentials({
-        email: email.trim(),
-        password: senha,
+        email: result.data.email,
+        password: result.data.password,
       });
 
       Keyboard.dismiss();
@@ -77,7 +129,6 @@ export function LoginScreen() {
 
           <View style={styles.heading}>
             <Text style={styles.title}>Que bom ter{"\n"}você aqui.</Text>
-
             <Text style={styles.subtitle}>
               Entre para continuar sua jornada.
             </Text>
@@ -85,13 +136,13 @@ export function LoginScreen() {
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>E-mail ou celular</Text>
+              <Text style={styles.label}>E-mail</Text>
 
               <TextInput
                 style={styles.input}
                 value={email}
-                onChangeText={setEmail}
-                placeholder="Digite seu e-mail ou celular"
+                onChangeText={handleEmailChange}
+                placeholder="Digite seu e-mail"
                 placeholderTextColor={colors.neutral.carbon}
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -99,8 +150,19 @@ export function LoginScreen() {
                 autoComplete="email"
                 editable={!isLoading}
                 returnKeyType="next"
-                accessibilityLabel="E-mail ou celular"
+                accessibilityLabel="E-mail"
+                accessibilityHint="Digite um endereço de e-mail válido"
+                accessibilityState={{ disabled: isLoading }}
               />
+
+              {!!errors.email && (
+                <Text
+                  style={{ color: "#DC2626", fontSize: 12, marginTop: 5 }}
+                  accessibilityRole="alert"
+                >
+                  {errors.email}
+                </Text>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -109,7 +171,7 @@ export function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={senha}
-                onChangeText={setSenha}
+                onChangeText={handlePasswordChange}
                 placeholder="Digite sua senha"
                 placeholderTextColor={colors.neutral.carbon}
                 secureTextEntry
@@ -119,7 +181,18 @@ export function LoginScreen() {
                 returnKeyType="done"
                 onSubmitEditing={handleLogin}
                 accessibilityLabel="Senha"
+                accessibilityHint="A senha deve ter pelo menos 8 caracteres"
+                accessibilityState={{ disabled: isLoading }}
               />
+
+              {!!errors.password && (
+                <Text
+                  style={{ color: "#DC2626", fontSize: 12, marginTop: 5 }}
+                  accessibilityRole="alert"
+                >
+                  {errors.password}
+                </Text>
+              )}
             </View>
 
             <TouchableOpacity
