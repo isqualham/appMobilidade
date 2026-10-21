@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+
 const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, "");
 
 if (!API_URL) {
@@ -7,6 +9,8 @@ if (!API_URL) {
 }
 
 export { API_URL };
+
+const TOKEN_KEY = "viau_auth_token";
 
 function extractErrorMessage(data: unknown): string | null {
   if (typeof data === "string") {
@@ -50,6 +54,8 @@ export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const token = await SecureStore.getItemAsync(TOKEN_KEY);
+
   const response = await fetch(
     `${API_URL}${path.startsWith("/") ? path : `/${path}`}`,
     {
@@ -57,6 +63,7 @@ export async function apiRequest<T>(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     },

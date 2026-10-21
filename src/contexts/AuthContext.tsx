@@ -1,11 +1,22 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { AuthCredentials, User } from "../services/auth/auth.types";
-import { clearAuthToken, signIn } from "../services/auth/auth.service";
+import {
+  clearAuthToken,
+  restoreSession,
+  signIn,
+} from "../services/auth/auth.service";
 
 interface AuthContextData {
   user: User | null;
   isAuthenticated: boolean;
+  isLoadingAuth: boolean;
   signInWithCredentials: (credentials: AuthCredentials) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -18,6 +29,37 @@ interface AuthProviderProps {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSession() {
+      try {
+        const authenticatedUser = await restoreSession();
+
+        if (isMounted) {
+          setUser(authenticatedUser);
+        }
+      } catch (error) {
+        console.error("Erro ao restaurar sessão:", error);
+
+        if (isMounted) {
+          setUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingAuth(false);
+        }
+      }
+    }
+
+    void loadSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   async function signInWithCredentials(
     credentials: AuthCredentials,
@@ -36,6 +78,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       value={{
         user,
         isAuthenticated: user !== null,
+        isLoadingAuth,
         signInWithCredentials,
         signOut,
       }}
