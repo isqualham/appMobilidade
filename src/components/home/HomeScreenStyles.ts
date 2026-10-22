@@ -7,10 +7,14 @@ export const styles = StyleSheet.create({
     backgroundColor: theme.colors.semantic.backgroundPrimary,
   },
 
-  // Mapa
   mapContainer: {
     flex: 1,
     position: "relative",
+  },
+
+  driverMapContainer: {
+    flex: 1.35,
+    backgroundColor: "#E8EFEB",
   },
 
   menuButton: {
@@ -24,7 +28,7 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 4,
-    zIndex: 2,
+    zIndex: 3,
   },
 
   locationBadge: {
@@ -67,7 +71,96 @@ export const styles = StyleSheet.create({
     elevation: 4,
   },
 
-  // Painel inferior
+  driverStatusBadge: {
+    position: "absolute",
+    top: 55,
+    left: 105,
+    right: 88,
+    minHeight: 58,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 32,
+    backgroundColor: "#17211D",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    elevation: 5,
+    zIndex: 2,
+  },
+
+  driverStatusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#C7F43D",
+  },
+
+  driverStatusDotOffline: {
+    backgroundColor: "#9CA3AF",
+  },
+
+  driverStatusTextContainer: {
+    flexShrink: 1,
+  },
+
+  driverStatusTitle: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+
+  driverStatusSubtitle: {
+    color: "#C4CEC8",
+    fontSize: 9,
+    marginTop: 4,
+  },
+
+  notificationButton: {
+    position: "absolute",
+    top: 55,
+    right: 22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    zIndex: 3,
+  },
+
+  driverCenterMarker: {
+    position: "absolute",
+    top: "23%",
+    alignSelf: "center",
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 7,
+    borderColor: "#FFFFFF",
+    backgroundColor: "#C7F43D",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+  },
+
+  driverCenterMarkerInner: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  driverMapLocation: {
+    position: "absolute",
+    top: 132,
+    right: 38,
+    color: "#8A9991",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+  },
+
   bottomSheet: {
     backgroundColor: theme.colors.semantic.backgroundElevated,
     borderTopLeftRadius: theme.radii.sheet,
@@ -78,11 +171,20 @@ export const styles = StyleSheet.create({
     marginTop: -18,
   },
 
+  driverBottomSheet: {
+    paddingHorizontal: 22,
+    paddingTop: 16,
+    paddingBottom: 12,
+    marginTop: -18,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+  },
+
   handle: {
     width: 38,
-    height: theme.spacing.xs,
+    height: 6,
     borderRadius: theme.radii.full,
-    backgroundColor: theme.colors.neutral.mist,
+    backgroundColor: "#D6DED9",
     alignSelf: "center",
     marginBottom: theme.spacing.xxxxxl,
   },
@@ -98,6 +200,155 @@ export const styles = StyleSheet.create({
     fontWeight: theme.typography.fontWeight.extrabold,
     marginTop: theme.spacing.xs,
     marginBottom: theme.spacing.xxxxxl,
+  },
+
+  driverGreetingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 16,
+  },
+
+  driverGreetingContainer: {
+    flex: 1,
+  },
+
+  driverGreeting: {
+    color: "#18875A",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    marginBottom: 12,
+  },
+
+  driverTitle: {
+    color: "#17211D",
+    fontSize: 25,
+    lineHeight: 30,
+    fontWeight: "500",
+  },
+
+  onlineButton: {
+    width: 78,
+    minHeight: 78,
+    borderRadius: 22,
+    backgroundColor: "#C7F43D",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+  },
+
+  offlineButton: {
+    backgroundColor: "#475569",
+  },
+
+  onlineButtonText: {
+    color: "#17211D",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  offlineButtonText: {
+    color: "#FFFFFF",
+  },
+
+  requestStatusCard: {
+    minHeight: 76,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#DFE5E1",
+    backgroundColor: "#F4F6F2",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+    marginBottom: 12,
+  },
+
+  requestStatusDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#18875A",
+    borderWidth: 4,
+    borderColor: "#D5E8DD",
+    boxSizing: "content-box",
+  },
+
+  requestStatusDotSimulated: {
+    backgroundColor: "#C7F43D",
+    borderColor: "#E9F8B5",
+  },
+
+  requestStatusContent: {
+    flex: 1,
+  },
+
+  requestStatusTitle: {
+    color: "#17211D",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  requestStatusSubtitle: {
+    color: "#707D76",
+    fontSize: 11,
+    marginTop: 5,
+  },
+
+  earningsCard: {
+    minHeight: 82,
+    borderRadius: 20,
+    backgroundColor: "#17211D",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+
+  earningsMain: {
+    flex: 1,
+  },
+
+  earningsLabel: {
+    color: "#9AA79F",
+    fontSize: 10,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+
+  earningsValue: {
+    color: "#FFFFFF",
+    fontSize: 21,
+    fontWeight: "900",
+  },
+
+  earningsDivider: {
+    width: 1,
+    height: 44,
+    backgroundColor: "#3D4942",
+    marginHorizontal: 14,
+  },
+
+  servicesSummary: {
+    minWidth: 58,
+  },
+
+  simulateButton: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 2,
+  },
+
+  simulateButtonText: {
+    color: "#18875A",
+    fontSize: 13,
+    fontWeight: "500",
   },
 
   destinationInput: {
@@ -135,7 +386,6 @@ export const styles = StyleSheet.create({
     marginBottom: theme.spacing.xlPlus,
   },
 
-  // Lugares salvos
   placesRow: {
     flexDirection: "row",
     gap: theme.spacing.xl,
@@ -172,9 +422,8 @@ export const styles = StyleSheet.create({
     marginTop: theme.spacing.xs,
   },
 
-  // Navegação inferior: Início, Atividade e Carteira
   bottomNavigation: {
-    minHeight: 76,
+    minHeight: 66,
     backgroundColor: theme.colors.semantic.backgroundElevated,
     borderTopWidth: 1,
     borderTopColor: theme.colors.semantic.borderDefault,
@@ -182,8 +431,8 @@ export const styles = StyleSheet.create({
     justifyContent: "space-around",
     alignItems: "center",
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.xs,
-    paddingBottom: theme.spacing.md,
+    paddingTop: 2,
+    paddingBottom: 4,
   },
 
   navItem: {
@@ -203,195 +452,5 @@ export const styles = StyleSheet.create({
   navText: {
     color: theme.colors.semantic.textSecondary,
     fontSize: theme.typography.fontSize.button,
-  },
-
-  // Menu lateral
-  drawer: {
-    width: "84%",
-    maxWidth: 360,
-    height: "100%",
-    alignSelf: "flex-start",
-    backgroundColor: theme.colors.semantic.backgroundElevated,
-    paddingTop: 48,
-    paddingBottom: theme.spacing.xxxxxl,
-    zIndex: 1,
-    elevation: 20,
-    shadowColor: "#000000",
-    shadowOffset: { width: 4, height: 0 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-  },
-
-  drawerHeader: {
-    paddingHorizontal: theme.spacing.huge,
-    paddingBottom: theme.spacing.xxxxxl,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.semantic.borderDefault,
-  },
-
-  drawerCloseButton: {
-    alignSelf: "flex-end",
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: theme.spacing.xl,
-  },
-
-  profileHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.xl,
-  },
-
-  profileAvatar: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: theme.colors.semantic.backgroundPrimary,
-  },
-
-  profileAvatarFallback: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: theme.colors.feedback.successSoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  profileTextContainer: {
-    flex: 1,
-  },
-
-  profileName: {
-    color: theme.colors.semantic.textPrimary,
-    fontSize: 20,
-    fontWeight: theme.typography.fontWeight.bold,
-  },
-
-  profileEmail: {
-    color: theme.colors.semantic.textSecondary,
-    fontSize: 15,
-    lineHeight: 21,
-    marginTop: theme.spacing.xxs,
-  },
-
-  profileLink: {
-    color: theme.colors.semantic.actionPositive,
-    fontSize: 16,
-    fontWeight: theme.typography.fontWeight.semibold,
-    marginTop: theme.spacing.xs,
-  },
-
-  profileRoleBadge: {
-    alignSelf: "flex-start",
-    marginTop: theme.spacing.xl,
-    paddingHorizontal: theme.spacing.xl,
-    paddingVertical: theme.spacing.md,
-    backgroundColor: theme.colors.feedback.successSoft,
-    borderRadius: theme.radii.pill,
-  },
-
-  profileRoleText: {
-    color: theme.colors.semantic.actionPositive,
-    fontSize: 15,
-    fontWeight: theme.typography.fontWeight.semibold,
-  },
-
-  // Alternância entre Cliente e Prestador
-  profileSwitchSection: {
-    paddingHorizontal: theme.spacing.huge,
-    paddingVertical: theme.spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.semantic.borderDefault,
-  },
-
-  profileSwitchOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.lg,
-    marginTop: theme.spacing.md,
-    backgroundColor: theme.colors.semantic.backgroundPrimary,
-    borderRadius: theme.radii.button,
-    minHeight: 52,
-  },
-
-  profileSwitchText: {
-    flex: 1,
-    color: theme.colors.semantic.textPrimary,
-    fontSize: 15,
-    fontWeight: theme.typography.fontWeight.semibold,
-  },
-
-  drawerMenuScroll: {
-    flex: 1,
-  },
-
-  drawerMenuContent: {
-    paddingHorizontal: theme.spacing.xl,
-    paddingTop: theme.spacing.xl,
-    paddingBottom: theme.spacing.xxxxxl,
-  },
-
-  drawerSectionLabel: {
-    color: theme.colors.semantic.textSecondary,
-    fontSize: 14,
-    fontWeight: theme.typography.fontWeight.bold,
-    letterSpacing: 1,
-    marginHorizontal: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
-  },
-
-  drawerMenuItem: {
-    minHeight: 58,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: theme.spacing.md,
-    borderRadius: theme.radii.control,
-    gap: theme.spacing.xl,
-  },
-
-  drawerMenuText: {
-    flex: 1,
-    color: theme.colors.semantic.textPrimary,
-    fontSize: 18,
-    lineHeight: 25,
-  },
-
-  drawerDivider: {
-    height: 1,
-    backgroundColor: theme.colors.semantic.borderDefault,
-    marginVertical: theme.spacing.xl,
-  },
-
-  drawerLogoutText: {
-    flex: 1,
-    color: "#DC2626",
-    fontSize: 18,
-    lineHeight: 25,
-  },
-
-  drawerFooter: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.semantic.borderDefault,
-    paddingHorizontal: theme.spacing.huge,
-    paddingTop: theme.spacing.xl,
-  },
-
-  drawerBrand: {
-    color: theme.colors.semantic.actionPositive,
-    fontSize: 24,
-    fontWeight: theme.typography.fontWeight.extrabold,
-  },
-
-  drawerVersion: {
-    color: theme.colors.semantic.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: theme.spacing.xs,
   },
 });

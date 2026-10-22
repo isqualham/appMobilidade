@@ -17,11 +17,12 @@ interface LoginApiResponse extends AuthApiUser {
 }
 
 const TOKEN_KEY = "viau_auth_token";
-
-// Ajuste para o caminho real da sua rota de usuário autenticado.
 const CURRENT_USER_ROUTE = "/api/auth/me";
 
 function mapApiUser(response: AuthApiUser): User {
+  const providerApproved =
+    response.prestador === true && response.statusAprovacao === "APROVADO";
+
   return {
     id: response.id,
     name: response.nome,
@@ -29,7 +30,7 @@ function mapApiUser(response: AuthApiUser): User {
     administrador: response.administrador,
     prestador: response.prestador,
     statusAprovacao: response.statusAprovacao,
-    profiles: ["client"],
+    profiles: providerApproved ? ["client", "provider"] : ["client"],
     activeProfile: "client",
   };
 }

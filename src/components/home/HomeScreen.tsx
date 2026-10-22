@@ -1,51 +1,29 @@
-import { useEffect, useRef, useState, type ComponentProps } from "react";
-import {
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Text, TouchableOpacity, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import { Lucide } from "@react-native-vector-icons/lucide";
 
+import { useAuth } from "../../contexts/AuthContext";
 import { HomeMap, type HomeMapHandle } from "./HomeMap";
 import { styles } from "./HomeScreenStyles";
-
-type IconName = ComponentProps<typeof Lucide>["name"];
-type ProfileType = "passenger" | "driver";
-
-type MenuItem = {
-  label: string;
-  icon: IconName;
-  route?: "/home" | "/destination";
-};
+import { SideMenu } from "../../components/navigation/SideMenu";
 
 const ICON_SIZE = 23;
 const ICON_COLOR = "#475569";
-const ACTIVE_ICON_COLOR = "#2563EB";
-
-const MENU_ITEMS: MenuItem[] = [
-  { label: "Início", icon: "house", route: "/home" },
-  { label: "Histórico de viagens", icon: "history" },
-  { label: "Lugares favoritos", icon: "heart" },
-  { label: "Configurações", icon: "settings" },
-  { label: "Ajuda e suporte", icon: "circle-help" },
-];
+const ACTIVE_ICON_COLOR = "#17211D";
+const LIME_COLOR = "#C7F43D";
 
 export function HomeScreen() {
   const homeMapRef = useRef<HomeMapHandle>(null);
+  const previousProfileRef = useRef<"passenger" | "driver" | null>(null);
 
   const [menuVisible, setMenuVisible] = useState(false);
-  const [activeProfile, setActiveProfile] = useState<ProfileType>("passenger");
+  const [isOnline, setIsOnline] = useState(true);
+  const [hasSimulatedRequest, setHasSimulatedRequest] = useState(false);
 
-  const userName = "Meu perfil";
-  const userEmail = "Gerencie sua conta";
-  const profilePhoto: string | null = null;
-  const driverEnabled = true;
+  const { activeProfile, user } = useAuth();
+  const isDriver = activeProfile === "driver";
 
   const params = useLocalSearchParams<{
     originName?: string;
@@ -56,6 +34,21 @@ export function HomeScreen() {
     destinationLatitude?: string;
     destinationLongitude?: string;
   }>();
+
+  // Limpa a rota quando o perfil muda para Prestador.
+  // Não navega novamente para /home, evitando atualizações repetidas.
+  useEffect(() => {
+    const currentProfile = isDriver ? "driver" : "passenger";
+    const previousProfile = previousProfileRef.current;
+
+    previousProfileRef.current = currentProfile;
+
+    if (currentProfile !== "driver" || previousProfile === "driver") {
+      return;
+    }
+
+    homeMapRef.current?.clearRoute();
+  }, [isDriver]);
 
   const originName = params.originName;
   const originLatitude = Number(params.originLatitude);
@@ -91,17 +84,17 @@ export function HomeScreen() {
     longitude <= 180;
 
   useEffect(() => {
-    if (!hasOrigin) return;
+    if (isDriver || !hasOrigin) return;
 
     homeMapRef.current?.showOrigin({
       name: originName!,
       latitude: originLatitude,
       longitude: originLongitude,
     });
-  }, [hasOrigin, originName, originLatitude, originLongitude]);
+  }, [isDriver, hasOrigin, originName, originLatitude, originLongitude]);
 
   useEffect(() => {
-    if (!hasDestination) return;
+    if (isDriver || !hasDestination) return;
 
     homeMapRef.current?.showDestination({
       name: destinationName!,
@@ -110,6 +103,7 @@ export function HomeScreen() {
       longitude,
     });
   }, [
+    isDriver,
     hasDestination,
     destinationName,
     destinationAddress,
@@ -117,30 +111,62 @@ export function HomeScreen() {
     longitude,
   ]);
 
-  function closeMenu() {
-    setMenuVisible(false);
-  }
+  function handleNavigation(label: string) {
+    switch (label) {
+      case "Início":
+        // Já estamos na tela inicial; não empilha outra rota.
+        break;
 
-  function handleMenuItem(item: MenuItem) {
-    closeMenu();
-
-    if (item.route) {
-      router.push(item.route);
+      case "Atividade":
+      case "Carteira":
+      case "Serviços":
+      case "Ganhos":
+        Alert.alert(
+          "Em desenvolvimento",
+          "Esta funcionalidade será implementada em uma próxima etapa.",
+        );
+        break;
     }
   }
 
-  function toggleProfile() {
-    setActiveProfile((current) =>
-      current === "passenger" ? "driver" : "passenger",
+  function handleSimulateRequest() {
+    if (!isOnline) {
+      Alert.alert(
+        "Você está offline",
+        "Fique online para simular uma nova solicitação.",
+      );
+      return;
+    }
+
+    setHasSimulatedRequest(true);
+
+    Alert.alert(
+      "Solicitação simulada",
+      "A simulação foi registrada nesta tela. Nenhuma corrida real foi criada.",
     );
   }
+
+  const navigationItems = isDriver
+    ? [
+        { label: "Início", icon: "house" as const },
+        { label: "Serviços", icon: "history" as const },
+        { label: "Ganhos", icon: "wallet" as const },
+      ]
+    : [
+        { label: "Início", icon: "house" as const },
+        { label: "Atividade", icon: "history" as const },
+        { label: "Carteira", icon: "wallet" as const },
+      ];
 
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
 
-      <View style={styles.mapContainer}>
-        <HomeMap ref={homeMapRef} />
+      <View
+        style={[styles.mapContainer, isDriver && styles.driverMapContainer]}
+      >
+        {/* O mapa recebe o perfil e o status online do prestador. */}
+        <HomeMap ref={homeMapRef} isDriver={isDriver} isOnline={isOnline} />
 
         <TouchableOpacity
           style={styles.menuButton}
@@ -152,285 +178,283 @@ export function HomeScreen() {
           <Lucide name="menu" size={ICON_SIZE} color={ICON_COLOR} />
         </TouchableOpacity>
 
-        <View style={styles.locationBadge}>
-          <View style={styles.locationDot} />
-          <Text style={styles.locationText}>
-            {hasDestination ? "Destino selecionado" : "Você está aqui"}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.mapButton}
-          accessibilityRole="button"
-          accessibilityLabel="Centralizar mapa"
-          activeOpacity={0.7}
-          onPress={() => homeMapRef.current?.centerOnUserLocation()}
-        >
-          <Lucide name="locate" size={ICON_SIZE} color={ICON_COLOR} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.bottomSheet}>
-        <View style={styles.handle} />
-
-        <Text style={styles.greeting}>Olá, tudo bem?</Text>
-
-        <Text style={styles.title}>
-          {hasDestination ? "Seu destino" : "Para onde vamos?"}
-        </Text>
-
-        <TouchableOpacity
-          style={styles.destinationInput}
-          accessibilityRole="button"
-          accessibilityLabel="Digite seu destino"
-          activeOpacity={0.7}
-          onPress={() => router.push("/destination")}
-        >
-          <Lucide name="search" size={ICON_SIZE} color={ICON_COLOR} />
-
-          <View style={styles.destinationTextContainer}>
-            <Text style={styles.destinationPlaceholder}>
-              {hasDestination ? destinationName : "Digite seu destino"}
-            </Text>
-
-            {hasDestination && (
-              <Text style={styles.selectedAddress} numberOfLines={2}>
-                {destinationAddress}
-              </Text>
-            )}
-          </View>
-
-          <Lucide name="arrow-right" size={20} color={ICON_COLOR} />
-        </TouchableOpacity>
-
-        <Text style={styles.sectionTitle}>Seus lugares</Text>
-
-        <View style={styles.placesRow}>
-          <TouchableOpacity
-            style={styles.placeItem}
-            activeOpacity={0.7}
-            onPress={() => {}}
-            accessibilityRole="button"
-            accessibilityLabel="Selecionar endereço de casa"
-          >
-            <View style={styles.placeIcon}>
-              <Lucide name="house" size={ICON_SIZE} color={ICON_COLOR} />
-            </View>
-            <Text style={styles.placeName}>Casa</Text>
-            <Text style={styles.placeAddress}>Adicionar endereço</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.placeItem}
-            activeOpacity={0.7}
-            onPress={() => {}}
-            accessibilityRole="button"
-            accessibilityLabel="Selecionar endereço de trabalho"
-          >
-            <View style={styles.placeIcon}>
-              <Lucide
-                name="briefcase-business"
-                size={ICON_SIZE}
-                color={ICON_COLOR}
+        {isDriver ? (
+          <>
+            <View style={styles.driverStatusBadge}>
+              <View
+                style={[
+                  styles.driverStatusDot,
+                  !isOnline && styles.driverStatusDotOffline,
+                ]}
               />
-            </View>
-            <Text style={styles.placeName}>Trabalho</Text>
-            <Text style={styles.placeAddress}>Adicionar endereço</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.bottomNavigation}>
-        <TouchableOpacity
-          style={styles.navItem}
-          accessibilityRole="button"
-          accessibilityLabel="Início"
-          onPress={() => router.push("/home")}
-        >
-          <Lucide name="house" size={ICON_SIZE} color={ACTIVE_ICON_COLOR} />
-          <Text style={styles.navTextActive}>Início</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          accessibilityRole="button"
-          accessibilityLabel="Atividade"
-          onPress={() => {}}
-        >
-          <Lucide name="history" size={ICON_SIZE} color={ICON_COLOR} />
-          <Text style={styles.navText}>Atividade</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          accessibilityRole="button"
-          accessibilityLabel="Carteira"
-          onPress={() => {}}
-        >
-          <Lucide name="wallet" size={ICON_SIZE} color={ICON_COLOR} />
-          <Text style={styles.navText}>Carteira</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Modal
-        visible={menuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={closeMenu}
-        statusBarTranslucent
-        presentationStyle="overFullScreen"
-      >
-        <View style={drawerStyles.overlay}>
-          <TouchableOpacity
-            style={drawerStyles.backdrop}
-            activeOpacity={1}
-            onPress={closeMenu}
-            accessibilityRole="button"
-            accessibilityLabel="Fechar menu"
-          />
-
-          <View style={styles.drawer}>
-            <View style={styles.drawerHeader}>
-              <TouchableOpacity
-                style={styles.drawerCloseButton}
-                onPress={closeMenu}
-                accessibilityRole="button"
-                accessibilityLabel="Fechar menu"
-              >
-                <Lucide name="x" size={ICON_SIZE} color={ICON_COLOR} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.profileHeader}
-                activeOpacity={0.75}
-                onPress={closeMenu}
-                accessibilityRole="button"
-                accessibilityLabel="Ver perfil"
-              >
-                {profilePhoto ? (
-                  <Image
-                    source={{ uri: profilePhoto }}
-                    style={styles.profileAvatar}
-                  />
-                ) : (
-                  <View style={styles.profileAvatarFallback}>
-                    <Lucide name="user-round" size={28} color={ICON_COLOR} />
-                  </View>
-                )}
-
-                <View style={styles.profileTextContainer}>
-                  <Text style={styles.profileName}>{userName}</Text>
-                  <Text style={styles.profileEmail}>{userEmail}</Text>
-                  <Text style={styles.profileLink}>Ver perfil ›</Text>
-                </View>
-
-                <Lucide name="chevron-right" size={20} color={ICON_COLOR} />
-              </TouchableOpacity>
-
-              <View style={styles.profileRoleBadge}>
-                <Text style={styles.profileRoleText}>
-                  {activeProfile === "passenger" ? "Cliente" : "Prestador"}
+              <View style={styles.driverStatusTextContainer}>
+                <Text style={styles.driverStatusTitle}>
+                  {isOnline ? "AGUARDANDO" : "VOCÊ ESTÁ OFFLINE"}
+                </Text>
+                <Text style={styles.driverStatusSubtitle}>
+                  {isOnline
+                    ? "Buscando solicitações próximas"
+                    : "Ative para receber solicitações"}
                 </Text>
               </View>
             </View>
 
-            {driverEnabled && (
-              <View style={styles.profileSwitchSection}>
-                <Text style={styles.drawerSectionLabel}>MODO DE USO</Text>
-
-                <TouchableOpacity
-                  style={styles.profileSwitchOption}
-                  activeOpacity={0.7}
-                  onPress={toggleProfile}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    activeProfile === "passenger"
-                      ? "Trocar para prestador"
-                      : "Trocar para cliente"
-                  }
-                >
-                  <Lucide
-                    name={
-                      activeProfile === "passenger" ? "car-front" : "user-round"
-                    }
-                    size={20}
-                    color={ICON_COLOR}
-                  />
-
-                  <Text style={styles.profileSwitchText}>
-                    {activeProfile === "passenger"
-                      ? "Trocar para prestador"
-                      : "Trocar para cliente"}
-                  </Text>
-
-                  <Lucide
-                    name="arrow-left-right"
-                    size={18}
-                    color={ICON_COLOR}
-                  />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <ScrollView
-              style={styles.drawerMenuScroll}
-              contentContainerStyle={styles.drawerMenuContent}
-              showsVerticalScrollIndicator={false}
+            <TouchableOpacity
+              style={styles.notificationButton}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Notificações"
+              onPress={() =>
+                Alert.alert(
+                  "Notificações",
+                  "As notificações serão implementadas posteriormente.",
+                )
+              }
             >
-              {MENU_ITEMS.map((item) => (
-                <TouchableOpacity
-                  key={item.label}
-                  style={styles.drawerMenuItem}
-                  activeOpacity={0.7}
-                  onPress={() => handleMenuItem(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={item.label}
+              <Lucide name="bell" size={ICON_SIZE} color={ICON_COLOR} />
+            </TouchableOpacity>
+
+            <Text style={styles.driverMapLocation}>CENTRO</Text>
+          </>
+        ) : (
+          <>
+            <View style={styles.locationBadge}>
+              <View style={styles.locationDot} />
+              <Text style={styles.locationText}>
+                {hasDestination ? "Destino selecionado" : "Você está aqui"}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.mapButton}
+              accessibilityRole="button"
+              accessibilityLabel="Centralizar mapa"
+              activeOpacity={0.7}
+              onPress={() => homeMapRef.current?.centerOnUserLocation()}
+            >
+              <Lucide name="locate" size={ICON_SIZE} color={ICON_COLOR} />
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+
+      <View style={[styles.bottomSheet, isDriver && styles.driverBottomSheet]}>
+        <View style={styles.handle} />
+
+        {isDriver ? (
+          <>
+            <View style={styles.driverGreetingRow}>
+              <View style={styles.driverGreetingContainer}>
+                <Text style={styles.driverGreeting}>
+                  BOM DIA, {user?.name?.trim().toUpperCase() || "PRESTADOR"}
+                </Text>
+
+                <Text style={styles.driverTitle}>Pronto para rodar?</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.onlineButton, !isOnline && styles.offlineButton]}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={isOnline ? "Ficar offline" : "Ficar online"}
+                accessibilityState={{ selected: isOnline }}
+                onPress={() => setIsOnline((current) => !current)}
+              >
+                <Lucide
+                  name={isOnline ? "power" : "power-off"}
+                  size={30}
+                  color={isOnline ? "#17211D" : "#FFFFFF"}
+                />
+
+                <Text
+                  style={[
+                    styles.onlineButtonText,
+                    !isOnline && styles.offlineButtonText,
+                  ]}
                 >
+                  {isOnline ? "Online" : "Offline"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.requestStatusCard}
+              activeOpacity={0.8}
+              onPress={() => handleNavigation("Serviços")}
+              accessibilityRole="button"
+              accessibilityLabel="Ver serviços"
+            >
+              <View
+                style={[
+                  styles.requestStatusDot,
+                  hasSimulatedRequest && styles.requestStatusDotSimulated,
+                ]}
+              />
+
+              <View style={styles.requestStatusContent}>
+                <Text style={styles.requestStatusTitle}>
+                  {hasSimulatedRequest
+                    ? "Simulação realizada"
+                    : isOnline
+                      ? "Aguardando solicitação"
+                      : "Você está offline"}
+                </Text>
+
+                <Text style={styles.requestStatusSubtitle}>
+                  {hasSimulatedRequest
+                    ? "Teste local · Nenhuma corrida real"
+                    : isOnline
+                      ? "ViaU Car e Entrega · Centro"
+                      : "Ative seu status para ficar disponível"}
+                </Text>
+              </View>
+
+              <Lucide name="arrow-right" size={25} color={ACTIVE_ICON_COLOR} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.earningsCard}
+              activeOpacity={0.8}
+              onPress={() => handleNavigation("Ganhos")}
+              accessibilityRole="button"
+              accessibilityLabel="Consultar ganhos"
+            >
+              <View style={styles.earningsMain}>
+                <Text style={styles.earningsLabel}>GANHOS DE HOJE</Text>
+                <Text style={styles.earningsValue}>R$ 146,80</Text>
+              </View>
+
+              <View style={styles.earningsDivider} />
+
+              <View style={styles.servicesSummary}>
+                <Text style={styles.earningsLabel}>SERVIÇOS</Text>
+                <Text style={styles.earningsValue}>
+                  {hasSimulatedRequest ? "9" : "8"}
+                </Text>
+              </View>
+
+              <Lucide name="chevron-right" size={23} color={LIME_COLOR} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.simulateButton}
+              activeOpacity={0.7}
+              onPress={handleSimulateRequest}
+              accessibilityRole="button"
+              accessibilityLabel="Simular nova solicitação"
+            >
+              <Text style={styles.simulateButtonText}>
+                Simular nova solicitação
+              </Text>
+              <Lucide name="arrow-right" size={21} color="#18875A" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.greeting}>Olá, tudo bem?</Text>
+
+            <Text style={styles.title}>
+              {hasDestination ? "Seu destino" : "Para onde vamos?"}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.destinationInput}
+              accessibilityRole="button"
+              accessibilityLabel="Digite seu destino"
+              activeOpacity={0.7}
+              onPress={() => router.push("/destination")}
+            >
+              <Lucide name="search" size={ICON_SIZE} color={ICON_COLOR} />
+
+              <View style={styles.destinationTextContainer}>
+                <Text style={styles.destinationPlaceholder}>
+                  {hasDestination ? destinationName : "Digite seu destino"}
+                </Text>
+
+                {hasDestination && (
+                  <Text style={styles.selectedAddress} numberOfLines={2}>
+                    {destinationAddress}
+                  </Text>
+                )}
+              </View>
+
+              <Lucide name="arrow-right" size={20} color={ICON_COLOR} />
+            </TouchableOpacity>
+
+            <Text style={styles.sectionTitle}>Seus lugares</Text>
+
+            <View style={styles.placesRow}>
+              <TouchableOpacity
+                style={styles.placeItem}
+                activeOpacity={0.7}
+                onPress={() =>
+                  Alert.alert("Casa", "O endereço favorito será implementado.")
+                }
+                accessibilityRole="button"
+                accessibilityLabel="Selecionar endereço de casa"
+              >
+                <View style={styles.placeIcon}>
+                  <Lucide name="house" size={ICON_SIZE} color={ICON_COLOR} />
+                </View>
+                <Text style={styles.placeName}>Casa</Text>
+                <Text style={styles.placeAddress}>Adicionar endereço</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.placeItem}
+                activeOpacity={0.7}
+                onPress={() =>
+                  Alert.alert(
+                    "Trabalho",
+                    "O endereço favorito será implementado.",
+                  )
+                }
+                accessibilityRole="button"
+                accessibilityLabel="Selecionar endereço de trabalho"
+              >
+                <View style={styles.placeIcon}>
                   <Lucide
-                    name={item.icon}
+                    name="briefcase-business"
                     size={ICON_SIZE}
                     color={ICON_COLOR}
                   />
-
-                  <Text style={styles.drawerMenuText}>{item.label}</Text>
-
-                  <Lucide name="chevron-right" size={18} color={ICON_COLOR} />
-                </TouchableOpacity>
-              ))}
-
-              <View style={styles.drawerDivider} />
-
-              <TouchableOpacity
-                style={styles.drawerMenuItem}
-                activeOpacity={0.7}
-                onPress={closeMenu}
-                accessibilityRole="button"
-                accessibilityLabel="Sair da conta"
-              >
-                <Lucide name="log-out" size={ICON_SIZE} color="#DC2626" />
-                <Text style={styles.drawerLogoutText}>Sair da conta</Text>
+                </View>
+                <Text style={styles.placeName}>Trabalho</Text>
+                <Text style={styles.placeAddress}>Adicionar endereço</Text>
               </TouchableOpacity>
-            </ScrollView>
-
-            <View style={styles.drawerFooter}>
-              <Text style={styles.drawerBrand}>ViaU</Text>
-              <Text style={styles.drawerVersion}>Mobilidade para você</Text>
             </View>
-          </View>
-        </View>
-      </Modal>
+          </>
+        )}
+      </View>
+
+      <View style={styles.bottomNavigation}>
+        {navigationItems.map((item) => {
+          const isActive = item.label === "Início";
+
+          return (
+            <TouchableOpacity
+              key={item.label}
+              style={styles.navItem}
+              accessibilityRole="button"
+              accessibilityLabel={item.label}
+              accessibilityState={{ selected: isActive }}
+              onPress={() => handleNavigation(item.label)}
+            >
+              <Lucide
+                name={item.icon}
+                size={ICON_SIZE}
+                color={isActive ? ACTIVE_ICON_COLOR : ICON_COLOR}
+              />
+
+              <Text style={isActive ? styles.navTextActive : styles.navText}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      <SideMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />
     </View>
   );
 }
-
-const drawerStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-start",
-    alignItems: "stretch",
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-  },
-});

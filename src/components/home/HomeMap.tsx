@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import MapView, { Marker, Polyline, type Region } from "react-native-maps";
+import * as Location from "expo-location";
 
 import { colors } from "../../theme";
 import {
@@ -40,10 +41,20 @@ export type HomeMapHandle = {
   centerOnUserLocation: () => void;
   showOrigin: (origin: MapOrigin) => void;
   showDestination: (destination: MapDestination) => void;
+  clearRoute: () => void;
 };
 
-export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
+type HomeMapProps = {
+  isDriver?: boolean;
+  isOnline?: boolean;
+};
+
+export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
+  { isDriver = false, isOnline = false },
+  ref,
+) {
   const mapRef = useRef<MapView>(null);
+  const routeRequestId = useRef(0);
 
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [selectedOrigin, setSelectedOrigin] = useState<MapOrigin | null>(null);
@@ -54,6 +65,9 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
   const [error, setError] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
 
+  const shouldTrackDriver = isDriver && isOnline;
+
+  // Obtém a localização inicial para abrir o mapa.
   useEffect(() => {
     let active = true;
 
@@ -63,6 +77,7 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
 
         if (active) {
           setLocation(userLocation);
+          setError(null);
         }
       } catch (err) {
         if (active) {
@@ -81,6 +96,64 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
       active = false;
     };
   }, []);
+
+  // Acompanha o GPS somente quando o prestador está online.
+  useEffect(() => {
+    if (!shouldTrackDriver) return;
+
+    let active = true;
+    let subscription: Location.LocationSubscription | null = null;
+
+    async function startTracking() {
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+
+        if (!active) return;
+
+        if (permission.status !== "granted") {
+          setError(
+            "Permita o acesso à localização para ficar disponível no ViaU.",
+          );
+          return;
+        }
+
+        setError(null);
+
+        const currentSubscription = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.High,
+            distanceInterval: 5,
+            timeInterval: 3000,
+          },
+          (position) => {
+            if (!active) return;
+
+            setLocation({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+          },
+        );
+
+        if (active) {
+          subscription = currentSubscription;
+        } else {
+          currentSubscription.remove();
+        }
+      } catch {
+        if (active) {
+          setError("Não foi possível acompanhar sua localização GPS.");
+        }
+      }
+    }
+
+    void startTracking();
+
+    return () => {
+      active = false;
+      subscription?.remove();
+    };
+  }, [shouldTrackDriver]);
 
   useImperativeHandle(
     ref,
@@ -105,6 +178,27 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
       showDestination(selectedDestination) {
         setDestination(selectedDestination);
       },
+
+      clearRoute() {
+        routeRequestId.current += 1;
+        setSelectedOrigin(null);
+        setDestination(null);
+        setRoute(null);
+        setLoadingRoute(false);
+        setRouteError(null);
+
+        if (location && mapReady) {
+          mapRef.current?.animateToRegion(
+            {
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.008,
+              longitudeDelta: 0.008,
+            },
+            600,
+          );
+        }
+      },
     }),
     [location, mapReady],
   );
@@ -127,16 +221,18 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
     return null;
   }, [selectedOrigin, location]);
 
+  // Calcula rotas apenas para o perfil Cliente.
   useEffect(() => {
-    if (routeOrigin === null || destination === null) {
+    const requestId = ++routeRequestId.current;
+
+    if (isDriver || routeOrigin === null || destination === null) {
       setRoute(null);
       setRouteError(null);
       setLoadingRoute(false);
       return;
     }
 
-    // Captura valores não nulos para uso seguro na função assíncrona.
-    const origin: RouteCoordinate = routeOrigin;
+    const origin = routeOrigin;
     const target: RouteCoordinate = {
       latitude: destination.latitude,
       longitude: destination.longitude,
@@ -152,11 +248,11 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
       try {
         const result = await calculateRoute(origin, target);
 
-        if (active) {
+        if (active && requestId === routeRequestId.current) {
           setRoute(result);
         }
       } catch (err) {
-        if (active) {
+        if (active && requestId === routeRequestId.current) {
           setRouteError(
             err instanceof Error
               ? err.message
@@ -164,7 +260,7 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
           );
         }
       } finally {
-        if (active) {
+        if (active && requestId === routeRequestId.current) {
           setLoadingRoute(false);
         }
       }
@@ -175,10 +271,11 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
     return () => {
       active = false;
     };
-  }, [routeOrigin, destination]);
+  }, [isDriver, routeOrigin, destination]);
 
+  // Ajusta a câmera à rota do Cliente.
   useEffect(() => {
-    if (!destination || !mapReady || !mapRef.current) return;
+    if (isDriver || !destination || !mapReady || !mapRef.current) return;
 
     if (route?.coordinates.length) {
       mapRef.current.fitToCoordinates(route.coordinates, {
@@ -202,7 +299,24 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
       },
       800,
     );
-  }, [destination, route, mapReady]);
+  }, [isDriver, destination, route, mapReady]);
+
+  // Segue o prestador somente enquanto ele está online.
+  useEffect(() => {
+    if (!shouldTrackDriver || !location || !mapReady || !mapRef.current) {
+      return;
+    }
+
+    mapRef.current.animateToRegion(
+      {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        latitudeDelta: 0.008,
+        longitudeDelta: 0.008,
+      },
+      500,
+    );
+  }, [shouldTrackDriver, mapReady, location]);
 
   if (error) {
     return (
@@ -241,38 +355,54 @@ export const HomeMap = forwardRef<HomeMapHandle>(function HomeMap(_props, ref) {
         style={styles.map}
         initialRegion={initialRegion}
         onMapReady={() => setMapReady(true)}
-        showsUserLocation
-        showsMyLocationButton
+        showsUserLocation={!isDriver}
+        showsMyLocationButton={!isDriver}
       >
-        <Marker
-          coordinate={originCoordinate}
-          title={selectedOrigin?.name ?? "Minha localização atual"}
-          description="Origem da viagem"
-          pinColor="#00864B"
-        />
+        {isDriver ? (
+          shouldTrackDriver && (
+            <Marker
+              coordinate={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+              }}
+              title="Sua localização"
+              description="Posição GPS atual"
+              pinColor="#00864B"
+            />
+          )
+        ) : (
+          <>
+            <Marker
+              coordinate={originCoordinate}
+              title={selectedOrigin?.name ?? "Minha localização atual"}
+              description="Origem da viagem"
+              pinColor="#00864B"
+            />
 
-        {destination && (
-          <Marker
-            coordinate={{
-              latitude: destination.latitude,
-              longitude: destination.longitude,
-            }}
-            title={destination.name}
-            description={destination.address}
-            pinColor="#E87524"
-          />
-        )}
+            {destination && (
+              <Marker
+                coordinate={{
+                  latitude: destination.latitude,
+                  longitude: destination.longitude,
+                }}
+                title={destination.name}
+                description={destination.address}
+                pinColor="#E87524"
+              />
+            )}
 
-        {route && (
-          <Polyline
-            coordinates={route.coordinates}
-            strokeColor="#18875A"
-            strokeWidth={5}
-          />
+            {route && (
+              <Polyline
+                coordinates={route.coordinates}
+                strokeColor="#18875A"
+                strokeWidth={5}
+              />
+            )}
+          </>
         )}
       </MapView>
 
-      {destination && (
+      {!isDriver && destination && (
         <View
           style={{
             position: "absolute",

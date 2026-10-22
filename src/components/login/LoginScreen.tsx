@@ -14,7 +14,7 @@ import { Lucide } from "@react-native-vector-icons/lucide";
 
 import { colors } from "../../theme";
 import { useAuth } from "../../contexts/AuthContext";
-import { loginSchema } from "../../services/auth/login.schema";
+import { loginSchema } from "./LoginScreen.schema";
 import Logo from "../../../assets/viau-logo.svg";
 import { styles } from "./LoginScreenStyles";
 
@@ -233,9 +233,7 @@ export function LoginScreen() {
               <Text style={styles.registerText}>Ainda não tem conta? </Text>
 
               <TouchableOpacity
-                onPress={() =>
-                  Alert.alert("Cadastro", "Tela de cadastro a implementar.")
-                }
+                onPress={() => router.push("/cadastro")}
                 disabled={isLoading}
               >
                 <Text style={styles.registerLink}>Cadastre-se</Text>

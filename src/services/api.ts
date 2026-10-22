@@ -83,6 +83,17 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     const message = extractErrorMessage(data);
+    const normalizedPath = path.replace(/\/+$/, "");
+    const isLoginRequest = normalizedPath === "/api/auth/login";
+
+    if (response.status === 401) {
+      if (!isLoginRequest) {
+        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        throw new Error("UNAUTHORIZED");
+      }
+
+      throw new Error(message ?? "E-mail ou senha inválidos.");
+    }
 
     throw new Error(message ?? "Não foi possível realizar a requisição.");
   }
