@@ -197,10 +197,10 @@ export function LoginScreen() {
 
             <TouchableOpacity
               style={styles.forgotButton}
-              onPress={() =>
-                Alert.alert("Recuperar senha", "Fluxo a implementar.")
-              }
+              onPress={() => router.push("/autenticacao-telefone")}
               disabled={isLoading}
+              accessibilityRole="button"
+              accessibilityLabel="Esqueci minha senha"
             >
               <Text style={styles.forgotText}>Esqueci minha senha</Text>
             </TouchableOpacity>

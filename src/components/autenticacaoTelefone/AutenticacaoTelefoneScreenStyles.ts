@@ -1,0 +1,112 @@
+import { StyleSheet } from "react-native";
+
+export const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  backButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 1.5,
+    borderColor: "#DFE5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 56,
+    marginLeft: 28,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 30,
+    paddingTop: 48,
+  },
+  iconContainer: {
+    width: 86,
+    height: 86,
+    borderRadius: 30,
+    backgroundColor: "#EFFFC3",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 42,
+  },
+  title: {
+    color: "#17211D",
+    fontSize: 46,
+    lineHeight: 52,
+    fontWeight: "400",
+    letterSpacing: -1.8,
+  },
+  subtitle: {
+    color: "#707D76",
+    fontSize: 16,
+    lineHeight: 24,
+    marginTop: 18,
+    marginBottom: 40,
+  },
+  inputContainer: {
+    borderWidth: 1.5,
+    borderColor: "#DFE5E1",
+    borderRadius: 22,
+    padding: 16,
+    marginBottom: 20,
+  },
+  label: {
+    color: "#707D76",
+    fontSize: 13,
+    marginBottom: 7,
+  },
+  codeInput: {
+    color: "#17211D",
+    fontSize: 24,
+    fontWeight: "600",
+    letterSpacing: 5,
+    paddingVertical: 8,
+  },
+  helperText: {
+    color: "#707D76",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  primaryButton: {
+    minHeight: 82,
+    borderRadius: 25,
+    backgroundColor: "#C7F43D",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 22,
+  },
+  primaryButtonText: {
+    color: "#17211D",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  securityContainer: {
+    minHeight: 86,
+    borderRadius: 24,
+    backgroundColor: "#F4F6F2",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 18,
+    paddingHorizontal: 22,
+    paddingVertical: 18,
+    marginTop: 20,
+  },
+  securityTextContainer: {
+    flex: 1,
+  },
+  securityTitle: {
+    color: "#17211D",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 7,
+  },
+  securitySubtitle: {
+    color: "#707D76",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+});
