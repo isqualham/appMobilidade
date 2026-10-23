@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { AppState, type AppStateStatus } from "react-native";
+import { router, usePathname } from "expo-router";
 
 import type { AuthCredentials, User } from "../services/auth/auth.types";
 import {
@@ -24,6 +25,7 @@ interface AuthContextData {
   activeProfile: ActiveProfile;
   canUseProviderProfile: boolean;
   setActiveProfile: (profile: ActiveProfile) => void;
+  refreshUser: () => Promise<void>;
   signInWithCredentials: (credentials: AuthCredentials) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -37,16 +39,14 @@ interface AuthProviderProps {
 function hasProviderAccess(user: User | null): boolean {
   return (
     user !== null &&
-    user.prestador === true &&
+    user.prestador &&
     user.statusAprovacao === "APROVADO" &&
     user.profiles.includes("provider")
   );
 }
 
 function isUnauthorizedError(error: unknown): boolean {
-  if (!error || typeof error !== "object") {
-    return false;
-  }
+  if (!error || typeof error !== "object") return false;
 
   const candidate = error as {
     status?: number;
@@ -62,6 +62,8 @@ function isUnauthorizedError(error: unknown): boolean {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const pathname = usePathname();
+
   const [user, setUser] = useState<User | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [activeProfile, setActiveProfileState] =
@@ -95,8 +97,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return;
       }
 
-      // Falhas de conexão não encerram automaticamente a sessão.
       console.error("Erro ao atualizar sessão:", error);
+      throw error;
     }
   }, [resetAuthentication]);
 
@@ -127,9 +129,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setActiveProfileState("passenger");
         }
       } finally {
-        if (isMounted) {
-          setIsLoadingAuth(false);
-        }
+        if (isMounted) setIsLoadingAuth(false);
       }
     }
 
@@ -158,11 +158,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => subscription.remove();
   }, [isLoadingAuth, user, refreshUser]);
 
-  function setActiveProfile(profile: ActiveProfile) {
-    if (profile === "driver" && !hasProviderAccess(user)) {
+  useEffect(() => {
+    if (isLoadingAuth) return;
+
+    if (user && !user.telefoneVerificado) {
+      if (pathname !== "/autenticacao-telefone") {
+        router.replace("/autenticacao-telefone");
+      }
       return;
     }
 
+    if (
+      user &&
+      user.telefoneVerificado &&
+      pathname === "/autenticacao-telefone"
+    ) {
+      router.replace("/home");
+    }
+  }, [isLoadingAuth, pathname, user]);
+
+  function setActiveProfile(profile: ActiveProfile) {
+    if (profile === "driver" && !hasProviderAccess(user)) return;
     setActiveProfileState(profile);
   }
 
@@ -170,7 +186,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     credentials: AuthCredentials,
   ): Promise<void> {
     const authenticatedUser = await signIn(credentials);
-
     setUser(authenticatedUser);
     setActiveProfileState("passenger");
   }
@@ -188,6 +203,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         activeProfile,
         canUseProviderProfile,
         setActiveProfile,
+        refreshUser,
         signInWithCredentials,
         signOut,
       }}

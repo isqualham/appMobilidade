@@ -10,6 +10,7 @@ interface AuthApiUser {
   administrador: boolean;
   prestador: boolean;
   statusAprovacao: "PENDENTE" | "APROVADO" | "REPROVADO" | null;
+  telefoneVerificado: boolean;
 }
 
 interface LoginApiResponse extends AuthApiUser {
@@ -30,6 +31,7 @@ function mapApiUser(response: AuthApiUser): User {
     administrador: response.administrador,
     prestador: response.prestador,
     statusAprovacao: response.statusAprovacao,
+    telefoneVerificado: response.telefoneVerificado,
     profiles: providerApproved ? ["client", "provider"] : ["client"],
     activeProfile: "client",
   };
@@ -50,7 +52,8 @@ export async function signIn(credentials: AuthCredentials): Promise<User> {
     !response.email ||
     !response.token ||
     typeof response.administrador !== "boolean" ||
-    typeof response.prestador !== "boolean"
+    typeof response.prestador !== "boolean" ||
+    typeof response.telefoneVerificado !== "boolean"
   ) {
     throw new Error("A API retornou uma resposta de login inválida.");
   }
@@ -75,14 +78,23 @@ export async function restoreSession(): Promise<User | null> {
       !response.nome ||
       !response.email ||
       typeof response.administrador !== "boolean" ||
-      typeof response.prestador !== "boolean"
+      typeof response.prestador !== "boolean" ||
+      typeof response.telefoneVerificado !== "boolean"
     ) {
       throw new Error("A API retornou dados de usuário inválidos.");
     }
 
     return mapApiUser(response);
   } catch (error) {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    const status =
+      error && typeof error === "object" && "status" in error
+        ? (error as { status?: number }).status
+        : undefined;
+
+    if (status === 401) {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    }
+
     throw error;
   }
 }
@@ -93,4 +105,23 @@ export async function getAuthToken(): Promise<string | null> {
 
 export async function clearAuthToken(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
+}
+
+export async function enviarCodigoTelefone(): Promise<void> {
+  await apiRequest("/api/auth/codigo/enviar", {
+    method: "POST",
+  });
+}
+
+export async function verificarCodigoTelefone(codigo: string): Promise<void> {
+  const codigoLimpo = codigo.trim();
+
+  if (!/^\d{6,8}$/.test(codigoLimpo)) {
+    throw new Error("Digite o código de verificação de 6 a 8  dígitos.");
+  }
+
+  await apiRequest("/api/auth/codigo/verificar", {
+    method: "POST",
+    body: JSON.stringify({ codigo: codigoLimpo }),
+  });
 }

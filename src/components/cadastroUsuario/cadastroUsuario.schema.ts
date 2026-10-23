@@ -30,6 +30,48 @@ function validarCPF(cpf: string): boolean {
   return digito === Number(cpf[10]);
 }
 
+const dddsValidos = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35,
+  37, 38, 41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55, 61, 62, 63, 64,
+  65, 66, 67, 68, 69, 71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88,
+  89, 91, 92, 93, 94, 95, 96, 97, 98, 99,
+]);
+
+function normalizarTelefone(valor: string): string {
+  let digitos = valor.replace(/\D/g, "");
+
+  // Se já veio com o código do Brasil, remove-o temporariamente
+  // para validar o número nacional.
+  if (
+    digitos.startsWith("55") &&
+    (digitos.length === 12 || digitos.length === 13)
+  ) {
+    digitos = digitos.slice(2);
+  }
+
+  return digitos;
+}
+
+function validarTelefone(telefone: string): boolean {
+  if (telefone.length !== 10 && telefone.length !== 11) {
+    return false;
+  }
+
+  const ddd = Number(telefone.slice(0, 2));
+
+  if (!dddsValidos.has(ddd)) {
+    return false;
+  }
+
+  const numero = telefone.slice(2);
+
+  if (numero.length === 9) {
+    return numero.startsWith("9");
+  }
+
+  return numero.length === 8 && /^[2-5]/.test(numero);
+}
+
 export const cadastroUsuarioSchema = z.object({
   nome: z
     .string()
@@ -53,11 +95,13 @@ export const cadastroUsuarioSchema = z.object({
 
   telefone: z
     .string()
-    .transform((valor) => valor.replace(/\D/g, ""))
+    .transform(normalizarTelefone)
     .refine(
-      (telefone) => telefone.length === 10 || telefone.length === 11,
-      "Informe um telefone com DDD válido.",
-    ),
+      validarTelefone,
+      "Informe um telefone válido com DDD. Exemplo: (65) 99911-7323.",
+    )
+    // Mantém o padrão internacional esperado pelo backend.
+    .transform((telefone) => `+55${telefone}`),
 
   senha: z.string().min(8, "A senha deve ter pelo menos 8 caracteres."),
 

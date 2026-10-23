@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -13,32 +13,69 @@ import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import { Lucide } from "@react-native-vector-icons/lucide";
 
-import { confirmarCodigoTelefone } from "./autenticacaoTelefone.service";
-import { autenticacaoTelefoneSchema } from "./AutenticacaoTelefoneScreen.schema";
+import {
+  enviarCodigoTelefone,
+  verificarCodigoTelefone,
+} from "../../services/auth/auth.service";
 import { styles } from "./AutenticacaoTelefoneScreenStyles";
 
 export function AutenticacaoTelefoneScreen() {
   const [codigo, setCodigo] = useState("");
   const [verificando, setVerificando] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
-  const resultadoValidacao = autenticacaoTelefoneSchema.safeParse({
-    codigo,
-  });
+  useEffect(() => {
+    async function enviarCodigoInicial() {
+      try {
+        setEnviando(true);
+        await enviarCodigoTelefone();
+      } catch (error) {
+        Alert.alert(
+          "Não foi possível enviar o código",
+          error instanceof Error
+            ? error.message
+            : "Tente novamente em instantes.",
+        );
+      } finally {
+        setEnviando(false);
+      }
+    }
 
-  const codigoValido = resultadoValidacao.success;
+    void enviarCodigoInicial();
+  }, []);
+
+  async function reenviarCodigo() {
+    if (enviando || verificando) return;
+
+    try {
+      setEnviando(true);
+      await enviarCodigoTelefone();
+
+      Alert.alert(
+        "Código enviado",
+        "Confira as mensagens SMS do telefone cadastrado.",
+      );
+    } catch (error) {
+      Alert.alert(
+        "Erro ao enviar",
+        error instanceof Error
+          ? error.message
+          : "Não foi possível enviar o código.",
+      );
+    } finally {
+      setEnviando(false);
+    }
+  }
 
   async function verificarCodigo() {
-    if (verificando) return;
+    if (verificando || enviando) return;
 
-    const resultado = autenticacaoTelefoneSchema.safeParse({
-      codigo,
-    });
+    const codigoLimpo = codigo.trim();
 
-    if (!resultado.success) {
+    if (!/^\d{6,8}$/.test(codigoLimpo)) {
       Alert.alert(
         "Código inválido",
-        resultado.error.issues[0]?.message ??
-          "Informe um token com 6 a 8 números.",
+        "Digite o código de verificação com 6 a 8 números.",
       );
       return;
     }
@@ -46,22 +83,34 @@ export function AutenticacaoTelefoneScreen() {
     try {
       setVerificando(true);
 
-      await confirmarCodigoTelefone(resultado.data.codigo);
+      await verificarCodigoTelefone(codigoLimpo);
 
       Keyboard.dismiss();
 
-      Alert.alert("Verificação concluída", "O token foi validado com sucesso.");
+      Alert.alert(
+        "Telefone verificado",
+        "Seu telefone foi confirmado com sucesso.",
+        [
+          {
+            text: "Continuar",
+            onPress: () => router.replace("/home"),
+          },
+        ],
+        { cancelable: false },
+      );
     } catch (error) {
       Alert.alert(
         "Não foi possível verificar",
         error instanceof Error
           ? error.message
-          : "Confira o token e tente novamente.",
+          : "Confira o código e tente novamente.",
       );
     } finally {
       setVerificando(false);
     }
   }
+
+  const ocupado = verificando || enviando;
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
@@ -73,6 +122,7 @@ export function AutenticacaoTelefoneScreen() {
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Voltar"
+          disabled={ocupado}
         >
           <Lucide name="arrow-left" size={24} color="#17211D" />
         </TouchableOpacity>
@@ -85,11 +135,11 @@ export function AutenticacaoTelefoneScreen() {
           <Text style={styles.title}>Autentique seu{"\n"}telefone.</Text>
 
           <Text style={styles.subtitle}>
-            Digite o token de verificação para confirmar seu telefone.
+            Digite o código enviado por SMS para confirmar seu telefone.
           </Text>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Token de verificação</Text>
+            <Text style={styles.label}>Código de verificação</Text>
 
             <TextInput
               style={styles.codeInput}
@@ -97,16 +147,16 @@ export function AutenticacaoTelefoneScreen() {
               onChangeText={(value) =>
                 setCodigo(value.replace(/\D/g, "").slice(0, 8))
               }
-              placeholder="Digite o token"
+              placeholder="Digite o código"
               placeholderTextColor="#707D76"
               keyboardType="number-pad"
               textContentType="oneTimeCode"
               autoComplete="sms-otp"
               maxLength={8}
-              editable={!verificando}
+              editable={!ocupado}
               returnKeyType="done"
               onSubmitEditing={verificarCodigo}
-              accessibilityLabel="Token de verificação"
+              accessibilityLabel="Código de verificação"
             />
 
             <Text style={styles.helperText}>Informe de 6 a 8 números.</Text>
@@ -115,19 +165,36 @@ export function AutenticacaoTelefoneScreen() {
           <TouchableOpacity
             style={[
               styles.primaryButton,
-              (verificando || (codigo.length > 0 && !codigoValido)) &&
+              (ocupado || (codigo.length > 0 && !/^\d{6,8}$/.test(codigo))) &&
                 styles.disabledButton,
             ]}
             onPress={verificarCodigo}
-            disabled={verificando}
+            disabled={ocupado}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel="Verificar token"
+            accessibilityLabel="Verificar código"
           >
             {verificando ? (
               <ActivityIndicator color="#17211D" />
             ) : (
-              <Text style={styles.primaryButtonText}>Verificar</Text>
+              <Text style={styles.primaryButtonText}>Verificar telefone</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={reenviarCodigo}
+            disabled={ocupado}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Reenviar código SMS"
+            style={{ marginTop: 18, alignItems: "center" }}
+          >
+            {enviando ? (
+              <ActivityIndicator color="#18875A" />
+            ) : (
+              <Text style={styles.helperText}>
+                Não recebeu? Reenviar código
+              </Text>
             )}
           </TouchableOpacity>
 
@@ -138,7 +205,7 @@ export function AutenticacaoTelefoneScreen() {
               <Text style={styles.securityTitle}>Ambiente protegido</Text>
 
               <Text style={styles.securitySubtitle}>
-                A validade do token é confirmada pelo backend.
+                A validade do código é confirmada pelo backend.
               </Text>
             </View>
           </View>

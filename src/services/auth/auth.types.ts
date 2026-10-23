@@ -13,6 +13,7 @@ export interface User {
   administrador: boolean;
   prestador: boolean;
   statusAprovacao: ProviderApprovalStatus;
+  telefoneVerificado: boolean;
   profiles: UserProfile[];
   activeProfile: UserProfile;
 }
