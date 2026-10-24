@@ -310,7 +310,7 @@ export function CadastroScreen() {
                     }}
                   >
                     <Lucide
-                      name={mostrarSenha ? "eye-off" : "eye"}
+                      name={mostrarSenha ? "eye" : "eye-off"}
                       size={20}
                       color={ICON_COLOR}
                     />

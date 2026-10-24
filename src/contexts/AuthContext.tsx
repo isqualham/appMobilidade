@@ -113,15 +113,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setUser(authenticatedUser);
           setActiveProfileState("passenger");
         }
-      } catch (error) {
-        if (isUnauthorizedError(error)) {
-          try {
-            await clearAuthToken();
-          } catch (clearError) {
-            console.error("Erro ao limpar sessão inválida:", clearError);
-          }
-        } else {
-          console.error("Erro ao restaurar sessão:", error);
+      } catch {
+        // A sessão não pôde ser validada. Remove o token antigo.
+        try {
+          await clearAuthToken();
+        } catch (error) {
+          console.error("Erro ao limpar sessão inválida:", error);
         }
 
         if (isMounted) {
@@ -151,7 +148,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
       previousState = nextState;
 
       if (returningToApp && !isLoadingAuth && user !== null) {
-        void refreshUser();
+        void refreshUser().catch((error) => {
+          console.error("Erro ao validar sessão ao retornar ao app:", error);
+        });
       }
     });
 
@@ -161,18 +160,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     if (isLoadingAuth) return;
 
-    if (user && !user.telefoneVerificado) {
+    if (!user) {
+      const publicRoutes = ["/login", "/cadastro", "/recuperar-senha", "/"];
+
+      if (!publicRoutes.includes(pathname)) {
+        router.replace("/login");
+      }
+
+      return;
+    }
+
+    if (!user.telefoneVerificado) {
       if (pathname !== "/autenticacao-telefone") {
         router.replace("/autenticacao-telefone");
       }
       return;
     }
 
-    if (
-      user &&
-      user.telefoneVerificado &&
-      pathname === "/autenticacao-telefone"
-    ) {
+    if (pathname === "/autenticacao-telefone") {
       router.replace("/home");
     }
   }, [isLoadingAuth, pathname, user]);
@@ -192,6 +197,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   async function signOut(): Promise<void> {
     await resetAuthentication();
+    router.replace("/login");
   }
 
   return (

@@ -29,6 +29,7 @@ type LoginErrors = {
 export function LoginScreen() {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [errors, setErrors] = useState<LoginErrors>({});
   const [isLoading, setIsLoading] = useState(false);
 
@@ -168,22 +169,53 @@ export function LoginScreen() {
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Senha</Text>
 
-              <TextInput
-                style={styles.input}
-                value={senha}
-                onChangeText={handlePasswordChange}
-                placeholder="Digite sua senha"
-                placeholderTextColor={colors.neutral.carbon}
-                secureTextEntry
-                autoCapitalize="none"
-                autoComplete="current-password"
-                editable={!isLoading}
-                returnKeyType="done"
-                onSubmitEditing={handleLogin}
-                accessibilityLabel="Senha"
-                accessibilityHint="A senha deve ter pelo menos 8 caracteres"
-                accessibilityState={{ disabled: isLoading }}
-              />
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}
+              >
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={senha}
+                  onChangeText={handlePasswordChange}
+                  placeholder="Digite sua senha"
+                  placeholderTextColor={colors.neutral.carbon}
+                  secureTextEntry={!mostrarSenha}
+                  autoCapitalize="none"
+                  autoComplete="current-password"
+                  editable={!isLoading}
+                  returnKeyType="done"
+                  onSubmitEditing={handleLogin}
+                  accessibilityLabel="Senha"
+                  accessibilityHint="A senha deve ter pelo menos 8 caracteres"
+                  accessibilityState={{ disabled: isLoading }}
+                />
+
+                <TouchableOpacity
+                  onPress={() => setMostrarSenha((visivel) => !visivel)}
+                  disabled={isLoading}
+                  style={{
+                    width: 40,
+                    height: 36,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginLeft: 8,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    mostrarSenha ? "Ocultar senha" : "Mostrar senha"
+                  }
+                  accessibilityState={{ disabled: isLoading }}
+                  hitSlop={8}
+                >
+                  <Lucide
+                    name={mostrarSenha ? "eye" : "eye-off"}
+                    size={ICON_SIZE}
+                    color={ICON_COLOR}
+                  />
+                </TouchableOpacity>
+              </View>
 
               {!!errors.password && (
                 <Text
@@ -197,7 +229,7 @@ export function LoginScreen() {
 
             <TouchableOpacity
               style={styles.forgotButton}
-              onPress={() => router.push("/autenticacao-telefone")}
+              onPress={() => router.push("/recuperar-senha")}
               disabled={isLoading}
               accessibilityRole="button"
               accessibilityLabel="Esqueci minha senha"
