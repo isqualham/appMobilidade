@@ -76,7 +76,6 @@ export function SideMenu({ visible, onClose }: SideMenuProps) {
 
     try {
       await signOut();
-      router.replace("/login");
     } catch (error) {
       console.error("Erro ao sair da conta:", error);
     }

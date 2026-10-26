@@ -1,16 +1,28 @@
-import * as SecureStore from "expo-secure-store";
+import { requestJson } from "./http";
+import {
+  assertSessionVersion,
+  getAccessToken,
+  getSessionVersion,
+  rejectAccessToken,
+} from "./auth/session";
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, "");
+export { API_URL } from "./api.config";
 
-if (!API_URL) {
-  throw new Error(
-    "A variável EXPO_PUBLIC_API_URL não está configurada no arquivo .env.",
-  );
+const PUBLIC_PATHS = new Set([
+  "/api/auth/login",
+  "/api/auth/refresh",
+  "/api/auth/logout",
+  "/api/usuarios",
+  "/api/auth/senha/enviar-codigo",
+  "/api/auth/senha/redefinir",
+  "/api/termos-uso-politica-privacidade",
+]);
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
 }
-
-export { API_URL };
-
-const TOKEN_KEY = "viau_auth_token";
 
 function extractErrorMessage(data: unknown): string | null {
   if (typeof data === "string") {
@@ -54,49 +66,41 @@ export async function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY);
-
-  const response = await fetch(
-    `${API_URL}${path.startsWith("/") ? path : `/${path}`}`,
-    {
-      ...options,
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options.headers,
-      },
-    },
+  const normalizedPath = `/${path.replace(/^\/+/, "")}`;
+  const protectedRequest = !PUBLIC_PATHS.has(
+    normalizedPath.split("?")[0].replace(/\/+$/, ""),
   );
+  const version = getSessionVersion();
+  let access = protectedRequest ? await getAccessToken(version) : null;
 
-  const responseText = await response.text();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (protectedRequest) assertSessionVersion(version);
+    const headers = new Headers(options.headers);
+    if (!headers.has("Accept")) headers.set("Accept", "application/json");
+    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    headers.delete("Authorization");
+    if (access) headers.set("Authorization", `Bearer ${access.token}`);
 
-  let data: unknown = null;
-
-  if (responseText.trim()) {
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      data = responseText;
-    }
-  }
-
-  if (!response.ok) {
-    const message = extractErrorMessage(data);
-    const normalizedPath = path.replace(/\/+$/, "");
-    const isLoginRequest = normalizedPath === "/api/auth/login";
-
-    if (response.status === 401) {
-      if (!isLoginRequest) {
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
-        throw new Error("UNAUTHORIZED");
+    // Network failures propagate immediately, including for POST/PATCH requests.
+    const { response, data } = await requestJson(normalizedPath, {
+      ...options,
+      headers,
+    });
+    if (protectedRequest) assertSessionVersion(version);
+    if (response.status === 401 && access) {
+      if (attempt === 0) {
+        access = await getAccessToken(version, access);
+        continue;
       }
-
-      throw new Error(message ?? "E-mail ou senha inválidos.");
+      await rejectAccessToken(version, access);
     }
-
-    throw new Error(message ?? "Não foi possível realizar a requisição.");
+    if (!response.ok) {
+      throw new ApiError(
+        extractErrorMessage(data) ?? "Não foi possível realizar a requisição.",
+        response.status,
+      );
+    }
+    return data as T;
   }
-
-  return data as T;
+  throw new Error("Não foi possível autenticar a requisição.");
 }

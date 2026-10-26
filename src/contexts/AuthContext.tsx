@@ -6,15 +6,21 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { Alert, AppState, type AppStateStatus } from "react-native";
 import { router, usePathname } from "expo-router";
 
 import type { AuthCredentials, User } from "../services/auth/auth.types";
 import {
-  clearAuthToken,
   restoreSession,
   signIn,
 } from "../services/auth/auth.service";
+import {
+  assertSessionVersion,
+  getSessionVersion,
+  logoutSession,
+  onSessionCleared,
+  SessionChangedError,
+} from "../services/auth/session";
 
 export type ActiveProfile = "passenger" | "driver";
 
@@ -61,6 +67,14 @@ function isUnauthorizedError(error: unknown): boolean {
   );
 }
 
+function showConnectionError(): void {
+  Alert.alert(
+    "Não foi possível conectar",
+    "Não conseguimos validar sua sessão. Verifique sua conexão com a internet e tente novamente.",
+    [{ text: "OK" }],
+  );
+}
+
 export function AuthProvider({ children }: AuthProviderProps) {
   const pathname = usePathname();
 
@@ -71,20 +85,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const canUseProviderProfile = hasProviderAccess(user);
 
-  const resetAuthentication = useCallback(async () => {
-    try {
-      await clearAuthToken();
-    } catch (error) {
-      console.error("Erro ao limpar token de autenticação:", error);
-    } finally {
-      setUser(null);
-      setActiveProfileState("passenger");
-    }
+  const resetAuthentication = useCallback(() => {
+    setUser(null);
+    setActiveProfileState("passenger");
   }, []);
 
+  useEffect(() => onSessionCleared(resetAuthentication), [resetAuthentication]);
+
   const refreshUser = useCallback(async () => {
+    const version = getSessionVersion();
     try {
       const authenticatedUser = await restoreSession();
+      assertSessionVersion(version);
 
       setUser(authenticatedUser);
 
@@ -92,41 +104,53 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setActiveProfileState("passenger");
       }
     } catch (error) {
+      if (error instanceof SessionChangedError || version !== getSessionVersion()) {
+        return;
+      }
       if (isUnauthorizedError(error)) {
-        await resetAuthentication();
+        resetAuthentication();
         return;
       }
 
-      console.error("Erro ao atualizar sessão:", error);
+      // Falhas de conexão não devem apagar um token potencialmente válido.
       throw error;
     }
   }, [resetAuthentication]);
 
   useEffect(() => {
     let isMounted = true;
+    const version = getSessionVersion();
 
     async function loadSession() {
       try {
         const authenticatedUser = await restoreSession();
 
-        if (isMounted) {
+        if (isMounted && version === getSessionVersion()) {
           setUser(authenticatedUser);
           setActiveProfileState("passenger");
         }
-      } catch {
-        // A sessão não pôde ser validada. Remove o token antigo.
-        try {
-          await clearAuthToken();
-        } catch (error) {
-          console.error("Erro ao limpar sessão inválida:", error);
+      } catch (error) {
+        if (error instanceof SessionChangedError || version !== getSessionVersion()) {
+          return;
         }
-
-        if (isMounted) {
-          setUser(null);
-          setActiveProfileState("passenger");
+        if (isUnauthorizedError(error)) {
+          // The session service already invalidated credentials before notifying us.
+          if (isMounted) {
+            setUser(null);
+            setActiveProfileState("passenger");
+          }
+        } else {
+          // Não apaga o token por falhas temporárias de rede ou servidor.
+          if (isMounted) {
+            setUser(null);
+            setActiveProfileState("passenger");
+            showConnectionError();
+          }
         }
       } finally {
-        if (isMounted) setIsLoadingAuth(false);
+        if (isMounted) {
+          setIsLoadingAuth(false);
+        }
       }
     }
 
@@ -147,15 +171,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       previousState = nextState;
 
-      if (returningToApp && !isLoadingAuth && user !== null) {
-        void refreshUser().catch((error) => {
-          console.error("Erro ao validar sessão ao retornar ao app:", error);
+      if (returningToApp && !isLoadingAuth) {
+        void refreshUser().catch(() => {
+          // Preserve a potentially valid session on an ordinary /me network failure.
         });
       }
     });
 
     return () => subscription.remove();
-  }, [isLoadingAuth, user, refreshUser]);
+  }, [isLoadingAuth, refreshUser]);
 
   useEffect(() => {
     if (isLoadingAuth) return;
@@ -174,6 +198,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (pathname !== "/autenticacao-telefone") {
         router.replace("/autenticacao-telefone");
       }
+
       return;
     }
 
@@ -184,20 +209,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   function setActiveProfile(profile: ActiveProfile) {
     if (profile === "driver" && !hasProviderAccess(user)) return;
+
     setActiveProfileState(profile);
   }
 
   async function signInWithCredentials(
     credentials: AuthCredentials,
   ): Promise<void> {
-    const authenticatedUser = await signIn(credentials);
+    const pendingLogin = signIn(credentials);
+    const version = getSessionVersion();
+    const authenticatedUser = await pendingLogin;
+    assertSessionVersion(version);
+
     setUser(authenticatedUser);
     setActiveProfileState("passenger");
   }
 
   async function signOut(): Promise<void> {
-    await resetAuthentication();
+    const pendingLogout = logoutSession();
+    resetAuthentication();
     router.replace("/login");
+    await pendingLogout;
   }
 
   return (

@@ -13,6 +13,7 @@ import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import { Lucide } from "@react-native-vector-icons/lucide";
 
+import { useAuth } from "../../contexts/AuthContext";
 import {
   enviarCodigoTelefone,
   verificarCodigoTelefone,
@@ -20,6 +21,8 @@ import {
 import { styles } from "./AutenticacaoTelefoneScreenStyles";
 
 export function AutenticacaoTelefoneScreen() {
+  const { refreshUser } = useAuth();
+
   const [codigo, setCodigo] = useState("");
   const [verificando, setVerificando] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -84,6 +87,9 @@ export function AutenticacaoTelefoneScreen() {
       setVerificando(true);
 
       await verificarCodigoTelefone(codigoLimpo);
+
+      // Atualiza os dados do usuário com as informações do backend.
+      await refreshUser();
 
       Keyboard.dismiss();
 

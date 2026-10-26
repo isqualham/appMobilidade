@@ -1,7 +1,14 @@
-import * as SecureStore from "expo-secure-store";
-
 import { apiRequest } from "../api";
 import type { AuthCredentials, User } from "./auth.types";
+import {
+  assertSessionVersion,
+  clearSession,
+  getAccessToken,
+  getSessionVersion,
+  isTokenPair,
+  readSession,
+  saveSession,
+} from "./session";
 
 interface AuthApiUser {
   id: string;
@@ -15,9 +22,9 @@ interface AuthApiUser {
 
 interface LoginApiResponse extends AuthApiUser {
   token: string;
+  refreshToken: string;
 }
 
-const TOKEN_KEY = "viau_auth_token";
 const CURRENT_USER_ROUTE = "/api/auth/me";
 
 function mapApiUser(response: AuthApiUser): User {
@@ -38,6 +45,11 @@ function mapApiUser(response: AuthApiUser): User {
 }
 
 export async function signIn(credentials: AuthCredentials): Promise<User> {
+  // A new login owns a new generation, even if an older refresh is still pending.
+  const cleanup = clearSession();
+  const version = getSessionVersion();
+  await cleanup;
+  assertSessionVersion(version);
   const response = await apiRequest<LoginApiResponse>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({
@@ -45,12 +57,14 @@ export async function signIn(credentials: AuthCredentials): Promise<User> {
       senha: credentials.password,
     }),
   });
+  assertSessionVersion(version);
 
   if (
+    !response ||
     !response.id ||
     !response.nome ||
     !response.email ||
-    !response.token ||
+    !isTokenPair(response) ||
     typeof response.administrador !== "boolean" ||
     typeof response.prestador !== "boolean" ||
     typeof response.telefoneVerificado !== "boolean"
@@ -58,53 +72,50 @@ export async function signIn(credentials: AuthCredentials): Promise<User> {
     throw new Error("A API retornou uma resposta de login inválida.");
   }
 
-  await SecureStore.setItemAsync(TOKEN_KEY, response.token);
+  try {
+    await saveSession(response, version);
+  } catch (error) {
+    await clearSession(version);
+    throw error;
+  }
 
   return mapApiUser(response);
 }
 
 export async function restoreSession(): Promise<User | null> {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY);
+  const version = getSessionVersion();
+  const tokens = await readSession(version);
 
-  if (!token) {
+  if (!tokens) {
     return null;
   }
 
-  try {
-    const response = await apiRequest<AuthApiUser>(CURRENT_USER_ROUTE);
+  const response = await apiRequest<AuthApiUser>(CURRENT_USER_ROUTE);
+  assertSessionVersion(version);
 
-    if (
-      !response.id ||
-      !response.nome ||
-      !response.email ||
-      typeof response.administrador !== "boolean" ||
-      typeof response.prestador !== "boolean" ||
-      typeof response.telefoneVerificado !== "boolean"
-    ) {
-      throw new Error("A API retornou dados de usuário inválidos.");
-    }
-
-    return mapApiUser(response);
-  } catch (error) {
-    const status =
-      error && typeof error === "object" && "status" in error
-        ? (error as { status?: number }).status
-        : undefined;
-
-    if (status === 401) {
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
-    }
-
-    throw error;
+  if (
+    !response ||
+    !response.id ||
+    !response.nome ||
+    !response.email ||
+    typeof response.administrador !== "boolean" ||
+    typeof response.prestador !== "boolean" ||
+    typeof response.telefoneVerificado !== "boolean"
+  ) {
+    throw new Error("A API retornou dados de usuário inválidos.");
   }
+
+  return mapApiUser(response);
 }
 
 export async function getAuthToken(): Promise<string | null> {
-  return SecureStore.getItemAsync(TOKEN_KEY);
+  const version = getSessionVersion();
+  if (!(await readSession(version))) return null;
+  return (await getAccessToken(version)).token;
 }
 
 export async function clearAuthToken(): Promise<void> {
-  await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await clearSession();
 }
 
 export async function enviarCodigoTelefone(): Promise<void> {
