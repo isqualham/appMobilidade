@@ -81,15 +81,15 @@ export const styles = StyleSheet.create({
   },
 
   input: {
-    height: 27,
+    minHeight: 27,
     padding: theme.spacing.none,
-    fontSize: theme.typography.fontSize.metric,
+    fontSize: theme.typography.fontSize.heading,
     color: theme.colors.semantic.textPrimary,
   },
 
   errorText: {
-    color: "#DC2626",
-    fontSize: 12,
+    color: theme.colors.semantic.actionDestructive,
+    fontSize: theme.typography.fontSize.bodyComfortable,
     marginTop: theme.spacing.xs,
   },
 

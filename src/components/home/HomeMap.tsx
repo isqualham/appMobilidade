@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
 import MapView, { Marker, Polyline, type Region } from "react-native-maps";
 import * as Location from "expo-location";
 
@@ -47,10 +47,11 @@ export type HomeMapHandle = {
 type HomeMapProps = {
   isDriver?: boolean;
   isOnline?: boolean;
+  contentInsetTop?: number;
 };
 
 export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
-  { isDriver = false, isOnline = false },
+  { isDriver = false, isOnline = false, contentInsetTop = 0 },
   ref,
 ) {
   const mapRef = useRef<MapView>(null);
@@ -64,6 +65,7 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const [locationAttempt, setLocationAttempt] = useState(0);
 
   const shouldTrackDriver = isDriver && isOnline;
 
@@ -95,7 +97,7 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
     return () => {
       active = false;
     };
-  }, []);
+  }, [locationAttempt]);
 
   // Acompanha o GPS somente quando o prestador está online.
   useEffect(() => {
@@ -320,16 +322,25 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
 
   if (error) {
     return (
-      <View style={styles.messageContainer}>
+      <View style={[styles.messageContainer, contentInsetTop > 0 && { paddingTop: contentInsetTop }]}>
         <Text style={styles.messageTitle}>Localização indisponível</Text>
         <Text style={styles.message}>{error}</Text>
+        <TouchableOpacity
+          style={styles.retryButton} accessibilityRole="button" accessibilityLabel="Tentar obter localização novamente"
+          onPress={() => {
+            setError(null);
+            setLocationAttempt((attempt) => attempt + 1);
+          }}
+        >
+          <Text style={styles.retryLabel}>Tentar novamente</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   if (!location) {
     return (
-      <View style={styles.messageContainer}>
+      <View style={[styles.messageContainer, contentInsetTop > 0 && { paddingTop: contentInsetTop }]}>
         <ActivityIndicator size="large" color={colors.neutral.carbon} />
         <Text style={styles.message}>Localizando você...</Text>
       </View>
@@ -359,17 +370,15 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
         showsMyLocationButton={!isDriver}
       >
         {isDriver ? (
-          shouldTrackDriver && (
-            <Marker
-              coordinate={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-              }}
-              title="Sua localização"
-              description="Posição GPS atual"
-              pinColor="#00864B"
-            />
-          )
+          <Marker
+            coordinate={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+            }}
+            title="Sua localização"
+            description={isOnline ? "Posição GPS atual" : "Última localização obtida"}
+            pinColor={colors.brand.primary}
+          />
         ) : (
           <>
             <Marker

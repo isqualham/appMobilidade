@@ -7,20 +7,17 @@ import { Lucide } from "@react-native-vector-icons/lucide";
 import { useAuth } from "../../contexts/AuthContext";
 import { HomeMap, type HomeMapHandle } from "./HomeMap";
 import { styles } from "./HomeScreenStyles";
+import { HomeBottomNavigation } from "./HomeBottomNavigation";
+import { DriverHome } from "./DriverHome";
 import { SideMenu } from "../../components/navigation/SideMenu";
 
 const ICON_SIZE = 23;
 const ICON_COLOR = "#475569";
-const ACTIVE_ICON_COLOR = "#17211D";
-const LIME_COLOR = "#C7F43D";
 
 export function HomeScreen() {
   const homeMapRef = useRef<HomeMapHandle>(null);
-  const previousProfileRef = useRef<"passenger" | "driver" | null>(null);
 
   const [menuVisible, setMenuVisible] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-  const [hasSimulatedRequest, setHasSimulatedRequest] = useState(false);
 
   const { activeProfile, user } = useAuth();
   const isDriver = activeProfile === "driver";
@@ -34,21 +31,6 @@ export function HomeScreen() {
     destinationLatitude?: string;
     destinationLongitude?: string;
   }>();
-
-  // Limpa a rota quando o perfil muda para Prestador.
-  // Não navega novamente para /home, evitando atualizações repetidas.
-  useEffect(() => {
-    const currentProfile = isDriver ? "driver" : "passenger";
-    const previousProfile = previousProfileRef.current;
-
-    previousProfileRef.current = currentProfile;
-
-    if (currentProfile !== "driver" || previousProfile === "driver") {
-      return;
-    }
-
-    homeMapRef.current?.clearRoute();
-  }, [isDriver]);
 
   const originName = params.originName;
   const originLatitude = Number(params.originLatitude);
@@ -119,8 +101,6 @@ export function HomeScreen() {
 
       case "Atividade":
       case "Carteira":
-      case "Serviços":
-      case "Ganhos":
         Alert.alert(
           "Em desenvolvimento",
           "Esta funcionalidade será implementada em uma próxima etapa.",
@@ -129,44 +109,30 @@ export function HomeScreen() {
     }
   }
 
-  function handleSimulateRequest() {
-    if (!isOnline) {
-      Alert.alert(
-        "Você está offline",
-        "Fique online para simular uma nova solicitação.",
-      );
-      return;
-    }
+  const navigationItems = [
+    { label: "Início", icon: "house" as const },
+    { label: "Atividade", icon: "history" as const },
+    { label: "Carteira", icon: "wallet" as const },
+  ];
 
-    setHasSimulatedRequest(true);
-
-    Alert.alert(
-      "Solicitação simulada",
-      "A simulação foi registrada nesta tela. Nenhuma corrida real foi criada.",
+  if (isDriver) {
+    return (
+      <View style={styles.container}>
+        <DriverHome
+          key={`${user?.id}-${user?.prestador}-${user?.statusAprovacao}-${user?.telefoneVerificado}`}
+          onOpenMenu={() => setMenuVisible(true)}
+        />
+        <SideMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />
+      </View>
     );
   }
-
-  const navigationItems = isDriver
-    ? [
-        { label: "Início", icon: "house" as const },
-        { label: "Serviços", icon: "history" as const },
-        { label: "Ganhos", icon: "wallet" as const },
-      ]
-    : [
-        { label: "Início", icon: "house" as const },
-        { label: "Atividade", icon: "history" as const },
-        { label: "Carteira", icon: "wallet" as const },
-      ];
 
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
 
-      <View
-        style={[styles.mapContainer, isDriver && styles.driverMapContainer]}
-      >
-        {/* O mapa recebe o perfil e o status online do prestador. */}
-        <HomeMap ref={homeMapRef} isDriver={isDriver} isOnline={isOnline} />
+      <View style={styles.mapContainer}>
+        <HomeMap ref={homeMapRef} />
 
         <TouchableOpacity
           style={styles.menuButton}
@@ -178,281 +144,102 @@ export function HomeScreen() {
           <Lucide name="menu" size={ICON_SIZE} color={ICON_COLOR} />
         </TouchableOpacity>
 
-        {isDriver ? (
-          <>
-            <View style={styles.driverStatusBadge}>
-              <View
-                style={[
-                  styles.driverStatusDot,
-                  !isOnline && styles.driverStatusDotOffline,
-                ]}
-              />
-              <View style={styles.driverStatusTextContainer}>
-                <Text style={styles.driverStatusTitle}>
-                  {isOnline ? "AGUARDANDO" : "VOCÊ ESTÁ OFFLINE"}
-                </Text>
-                <Text style={styles.driverStatusSubtitle}>
-                  {isOnline
-                    ? "Buscando solicitações próximas"
-                    : "Ative para receber solicitações"}
-                </Text>
-              </View>
-            </View>
+        <View style={styles.locationBadge}>
+          <View style={styles.locationDot} />
+          <Text style={styles.locationText}>
+            {hasDestination ? "Destino selecionado" : "Você está aqui"}
+          </Text>
+        </View>
 
-            <TouchableOpacity
-              style={styles.notificationButton}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Notificações"
-              onPress={() =>
-                Alert.alert(
-                  "Notificações",
-                  "As notificações serão implementadas posteriormente.",
-                )
-              }
-            >
-              <Lucide name="bell" size={ICON_SIZE} color={ICON_COLOR} />
-            </TouchableOpacity>
-
-            <Text style={styles.driverMapLocation}>CENTRO</Text>
-          </>
-        ) : (
-          <>
-            <View style={styles.locationBadge}>
-              <View style={styles.locationDot} />
-              <Text style={styles.locationText}>
-                {hasDestination ? "Destino selecionado" : "Você está aqui"}
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.mapButton}
-              accessibilityRole="button"
-              accessibilityLabel="Centralizar mapa"
-              activeOpacity={0.7}
-              onPress={() => homeMapRef.current?.centerOnUserLocation()}
-            >
-              <Lucide name="locate" size={ICON_SIZE} color={ICON_COLOR} />
-            </TouchableOpacity>
-          </>
-        )}
+        <TouchableOpacity
+          style={styles.mapButton}
+          accessibilityRole="button"
+          accessibilityLabel="Centralizar mapa"
+          activeOpacity={0.7}
+          onPress={() => homeMapRef.current?.centerOnUserLocation()}
+        >
+          <Lucide name="locate" size={ICON_SIZE} color={ICON_COLOR} />
+        </TouchableOpacity>
       </View>
 
-      <View style={[styles.bottomSheet, isDriver && styles.driverBottomSheet]}>
+      <View style={styles.bottomSheet}>
         <View style={styles.handle} />
 
-        {isDriver ? (
-          <>
-            <View style={styles.driverGreetingRow}>
-              <View style={styles.driverGreetingContainer}>
-                <Text style={styles.driverGreeting}>
-                  BOM DIA, {user?.name?.trim().toUpperCase() || "PRESTADOR"}
-                </Text>
+        <Text style={styles.greeting}>Olá, tudo bem?</Text>
 
-                <Text style={styles.driverTitle}>Pronto para rodar?</Text>
-              </View>
+        <Text style={styles.title}>
+          {hasDestination ? "Seu destino" : "Para onde vamos?"}
+        </Text>
 
-              <TouchableOpacity
-                style={[styles.onlineButton, !isOnline && styles.offlineButton]}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel={isOnline ? "Ficar offline" : "Ficar online"}
-                accessibilityState={{ selected: isOnline }}
-                onPress={() => setIsOnline((current) => !current)}
-              >
-                <Lucide
-                  name={isOnline ? "power" : "power-off"}
-                  size={30}
-                  color={isOnline ? "#17211D" : "#FFFFFF"}
-                />
+        <TouchableOpacity
+          style={styles.destinationInput}
+          accessibilityRole="button"
+          accessibilityLabel="Digite seu destino"
+          activeOpacity={0.7}
+          onPress={() => router.push("/destination")}
+        >
+          <Lucide name="search" size={ICON_SIZE} color={ICON_COLOR} />
 
-                <Text
-                  style={[
-                    styles.onlineButtonText,
-                    !isOnline && styles.offlineButtonText,
-                  ]}
-                >
-                  {isOnline ? "Online" : "Offline"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.requestStatusCard}
-              activeOpacity={0.8}
-              onPress={() => handleNavigation("Serviços")}
-              accessibilityRole="button"
-              accessibilityLabel="Ver serviços"
-            >
-              <View
-                style={[
-                  styles.requestStatusDot,
-                  hasSimulatedRequest && styles.requestStatusDotSimulated,
-                ]}
-              />
-
-              <View style={styles.requestStatusContent}>
-                <Text style={styles.requestStatusTitle}>
-                  {hasSimulatedRequest
-                    ? "Simulação realizada"
-                    : isOnline
-                      ? "Aguardando solicitação"
-                      : "Você está offline"}
-                </Text>
-
-                <Text style={styles.requestStatusSubtitle}>
-                  {hasSimulatedRequest
-                    ? "Teste local · Nenhuma corrida real"
-                    : isOnline
-                      ? "ViaU Car e Entrega · Centro"
-                      : "Ative seu status para ficar disponível"}
-                </Text>
-              </View>
-
-              <Lucide name="arrow-right" size={25} color={ACTIVE_ICON_COLOR} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.earningsCard}
-              activeOpacity={0.8}
-              onPress={() => handleNavigation("Ganhos")}
-              accessibilityRole="button"
-              accessibilityLabel="Consultar ganhos"
-            >
-              <View style={styles.earningsMain}>
-                <Text style={styles.earningsLabel}>GANHOS DE HOJE</Text>
-                <Text style={styles.earningsValue}>R$ 146,80</Text>
-              </View>
-
-              <View style={styles.earningsDivider} />
-
-              <View style={styles.servicesSummary}>
-                <Text style={styles.earningsLabel}>SERVIÇOS</Text>
-                <Text style={styles.earningsValue}>
-                  {hasSimulatedRequest ? "9" : "8"}
-                </Text>
-              </View>
-
-              <Lucide name="chevron-right" size={23} color={LIME_COLOR} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.simulateButton}
-              activeOpacity={0.7}
-              onPress={handleSimulateRequest}
-              accessibilityRole="button"
-              accessibilityLabel="Simular nova solicitação"
-            >
-              <Text style={styles.simulateButtonText}>
-                Simular nova solicitação
-              </Text>
-              <Lucide name="arrow-right" size={21} color="#18875A" />
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <Text style={styles.greeting}>Olá, tudo bem?</Text>
-
-            <Text style={styles.title}>
-              {hasDestination ? "Seu destino" : "Para onde vamos?"}
+          <View style={styles.destinationTextContainer}>
+            <Text style={styles.destinationPlaceholder}>
+              {hasDestination ? destinationName : "Digite seu destino"}
             </Text>
 
-            <TouchableOpacity
-              style={styles.destinationInput}
-              accessibilityRole="button"
-              accessibilityLabel="Digite seu destino"
-              activeOpacity={0.7}
-              onPress={() => router.push("/destination")}
-            >
-              <Lucide name="search" size={ICON_SIZE} color={ICON_COLOR} />
-
-              <View style={styles.destinationTextContainer}>
-                <Text style={styles.destinationPlaceholder}>
-                  {hasDestination ? destinationName : "Digite seu destino"}
-                </Text>
-
-                {hasDestination && (
-                  <Text style={styles.selectedAddress} numberOfLines={2}>
-                    {destinationAddress}
-                  </Text>
-                )}
-              </View>
-
-              <Lucide name="arrow-right" size={20} color={ICON_COLOR} />
-            </TouchableOpacity>
-
-            <Text style={styles.sectionTitle}>Seus lugares</Text>
-
-            <View style={styles.placesRow}>
-              <TouchableOpacity
-                style={styles.placeItem}
-                activeOpacity={0.7}
-                onPress={() =>
-                  Alert.alert("Casa", "O endereço favorito será implementado.")
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Selecionar endereço de casa"
-              >
-                <View style={styles.placeIcon}>
-                  <Lucide name="house" size={ICON_SIZE} color={ICON_COLOR} />
-                </View>
-                <Text style={styles.placeName}>Casa</Text>
-                <Text style={styles.placeAddress}>Adicionar endereço</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.placeItem}
-                activeOpacity={0.7}
-                onPress={() =>
-                  Alert.alert(
-                    "Trabalho",
-                    "O endereço favorito será implementado.",
-                  )
-                }
-                accessibilityRole="button"
-                accessibilityLabel="Selecionar endereço de trabalho"
-              >
-                <View style={styles.placeIcon}>
-                  <Lucide
-                    name="briefcase-business"
-                    size={ICON_SIZE}
-                    color={ICON_COLOR}
-                  />
-                </View>
-                <Text style={styles.placeName}>Trabalho</Text>
-                <Text style={styles.placeAddress}>Adicionar endereço</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-      </View>
-
-      <View style={styles.bottomNavigation}>
-        {navigationItems.map((item) => {
-          const isActive = item.label === "Início";
-
-          return (
-            <TouchableOpacity
-              key={item.label}
-              style={styles.navItem}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              accessibilityState={{ selected: isActive }}
-              onPress={() => handleNavigation(item.label)}
-            >
-              <Lucide
-                name={item.icon}
-                size={ICON_SIZE}
-                color={isActive ? ACTIVE_ICON_COLOR : ICON_COLOR}
-              />
-
-              <Text style={isActive ? styles.navTextActive : styles.navText}>
-                {item.label}
+            {hasDestination && (
+              <Text style={styles.selectedAddress} numberOfLines={2}>
+                {destinationAddress}
               </Text>
-            </TouchableOpacity>
-          );
-        })}
+            )}
+          </View>
+
+          <Lucide name="arrow-right" size={20} color={ICON_COLOR} />
+        </TouchableOpacity>
+
+        <Text style={styles.sectionTitle}>Seus lugares</Text>
+
+        <View style={styles.placesRow}>
+          <TouchableOpacity
+            style={styles.placeItem}
+            activeOpacity={0.7}
+            onPress={() =>
+              Alert.alert("Casa", "O endereço favorito será implementado.")
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Selecionar endereço de casa"
+          >
+            <View style={styles.placeIcon}>
+              <Lucide name="house" size={ICON_SIZE} color={ICON_COLOR} />
+            </View>
+            <Text style={styles.placeName}>Casa</Text>
+            <Text style={styles.placeAddress}>Adicionar endereço</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.placeItem}
+            activeOpacity={0.7}
+            onPress={() =>
+              Alert.alert(
+                "Trabalho",
+                "O endereço favorito será implementado.",
+              )
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Selecionar endereço de trabalho"
+          >
+            <View style={styles.placeIcon}>
+              <Lucide
+                name="briefcase-business"
+                size={ICON_SIZE}
+                color={ICON_COLOR}
+              />
+            </View>
+            <Text style={styles.placeName}>Trabalho</Text>
+            <Text style={styles.placeAddress}>Adicionar endereço</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      <HomeBottomNavigation items={navigationItems} activeLabel="Início" onSelect={handleNavigation} />
 
       <SideMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />
     </View>

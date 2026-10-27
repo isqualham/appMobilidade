@@ -53,7 +53,9 @@ export async function signIn(credentials: AuthCredentials): Promise<User> {
   const response = await apiRequest<LoginApiResponse>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({
-      email: credentials.email.trim(),
+      ...(credentials.telefone !== undefined
+        ? { telefone: credentials.telefone }
+        : { email: credentials.email.trim() }),
       senha: credentials.password,
     }),
   });

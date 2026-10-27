@@ -1,5 +1,13 @@
 This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
 
+## Controle do Git — regra permanente do ViaU
+
+- Apenas o usuário controla os commits.
+- Nunca execute `git add`, `git commit`, `git push`, `git reset`, `git stash` ou qualquer outro comando que altere o estado ou o histórico do Git sem autorização explícita do usuário.
+- A mesma restrição se aplica a ferramentas, scripts ou automações que realizem essas operações indiretamente.
+- É permitido consultar `git status` e `git diff`.
+- Pedidos para implementar, corrigir ou validar código não autorizam operações de escrita no Git. Preserve o índice, os commits, as referências e as alterações existentes.
+
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:

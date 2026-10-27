@@ -3,7 +3,7 @@ import { theme } from "../../theme";
 
 const { colors, spacing, radii, typography } = theme;
 const { semantic, neutral, feedback, brand } = colors;
-const { fontSize, fontWeight, letterSpacingEm } = typography;
+const { fontFamily, fontSize, fontWeight, letterSpacingEm } = typography;
 
 export const styles = StyleSheet.create({
   // Tela
@@ -144,10 +144,12 @@ export const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
 
+  // Tipografia padronizada para os campos de origem e destino
   input: {
     padding: spacing.none,
+    fontFamily: fontFamily.primary,
     fontSize: fontSize.subtitleEmphasis,
-    fontWeight: fontWeight.bold,
+    fontWeight: fontWeight.medium,
     color: semantic.textPrimary,
   },
 

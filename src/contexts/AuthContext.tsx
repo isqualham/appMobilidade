@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Alert, AppState, type AppStateStatus } from "react-native";
+import { Alert, AppState } from "react-native";
 import { router, usePathname } from "expo-router";
 
 import type { AuthCredentials, User } from "../services/auth/auth.types";
@@ -162,7 +162,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   useEffect(() => {
-    let previousState: AppStateStatus = AppState.currentState;
+    let previousState: typeof AppState.currentState = AppState.currentState;
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       const returningToApp =

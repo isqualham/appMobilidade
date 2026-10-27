@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   Alert,
   Keyboard,
+  Platform,
   Text,
   TextInput,
   TouchableOpacity,
@@ -22,12 +23,12 @@ const ICON_SIZE = 22;
 const ICON_COLOR = "#475569";
 
 type LoginErrors = {
-  email?: string;
+  identifier?: string;
   password?: string;
 };
 
 export function LoginScreen() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [errors, setErrors] = useState<LoginErrors>({});
@@ -35,16 +36,16 @@ export function LoginScreen() {
 
   const { signInWithCredentials } = useAuth();
 
-  function handleEmailChange(value: string) {
-    setEmail(value);
+  function handleIdentifierChange(value: string) {
+    setIdentifier(value);
 
-    const result = loginSchema.shape.email.safeParse(value);
+    const result = loginSchema.shape.identifier.safeParse(value);
 
     setErrors((previous) => ({
       ...previous,
-      email: result.success
+      identifier: result.success
         ? undefined
-        : previous.email
+        : previous.identifier
           ? result.error.issues[0]?.message
           : undefined,
     }));
@@ -69,7 +70,7 @@ export function LoginScreen() {
     if (isLoading) return;
 
     const result = loginSchema.safeParse({
-      email,
+      identifier,
       password: senha,
     });
 
@@ -79,7 +80,7 @@ export function LoginScreen() {
       for (const issue of result.error.issues) {
         const field = issue.path[0];
 
-        if ((field === "email" || field === "password") && !nextErrors[field]) {
+        if ((field === "identifier" || field === "password") && !nextErrors[field]) {
           nextErrors[field] = issue.message;
         }
       }
@@ -92,7 +93,9 @@ export function LoginScreen() {
       setIsLoading(true);
 
       await signInWithCredentials({
-        email: result.data.email,
+        ...(result.data.identifier.includes("@")
+          ? { email: result.data.identifier }
+          : { telefone: `+55${result.data.identifier.replace(/\D/g, "")}` }),
         password: result.data.password,
       });
 
@@ -137,31 +140,32 @@ export function LoginScreen() {
 
           <View style={styles.form}>
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>E-mail</Text>
+              <Text style={styles.label}>E-mail ou telefone</Text>
 
               <TextInput
                 style={styles.input}
-                value={email}
-                onChangeText={handleEmailChange}
-                placeholder="Digite seu e-mail"
+                value={identifier}
+                onChangeText={handleIdentifierChange}
+                placeholder="Digite seu e-mail ou telefone"
                 placeholderTextColor={colors.neutral.carbon}
-                keyboardType="email-address"
+                keyboardType="default"
                 autoCapitalize="none"
                 autoCorrect={false}
-                autoComplete="email"
+                autoComplete={Platform.OS === "ios" ? undefined : "username"}
+                textContentType={Platform.OS === "ios" ? "username" : undefined}
                 editable={!isLoading}
                 returnKeyType="next"
-                accessibilityLabel="E-mail"
-                accessibilityHint="Digite um endereço de e-mail válido"
+                accessibilityLabel="E-mail ou telefone"
+                accessibilityHint="Digite seu e-mail ou telefone com DDD"
                 accessibilityState={{ disabled: isLoading }}
               />
 
-              {!!errors.email && (
+              {!!errors.identifier && (
                 <Text
-                  style={{ color: "#DC2626", fontSize: 12, marginTop: 5 }}
+                  style={styles.errorText}
                   accessibilityRole="alert"
                 >
-                  {errors.email}
+                  {errors.identifier}
                 </Text>
               )}
             </View>
@@ -183,6 +187,7 @@ export function LoginScreen() {
                   placeholderTextColor={colors.neutral.carbon}
                   secureTextEntry={!mostrarSenha}
                   autoCapitalize="none"
+                  autoCorrect={false}
                   autoComplete="current-password"
                   editable={!isLoading}
                   returnKeyType="done"
@@ -219,7 +224,7 @@ export function LoginScreen() {
 
               {!!errors.password && (
                 <Text
-                  style={{ color: "#DC2626", fontSize: 12, marginTop: 5 }}
+                  style={styles.errorText}
                   accessibilityRole="alert"
                 >
                   {errors.password}

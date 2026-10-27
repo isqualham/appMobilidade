@@ -150,6 +150,14 @@ test("login stores the complete pair before returning and never sends an old JWT
   assert.deepEqual(JSON.parse(app.calls[0].body), { email: "teste@example.com", senha: "password" });
 });
 
+test("phone login sends only telefone and senha and stores the session", async () => {
+  const next = pair();
+  const app = runtime({ fetch: async () => json({ ...user, ...next }) });
+  await app.auth.signIn({ telefone: "+5565999991234", password: "password" });
+  assert.deepEqual(JSON.parse(app.calls[0].body), { telefone: "+5565999991234", senha: "password" });
+  assert.deepEqual(JSON.parse(app.store.get(SESSION_KEY)), next);
+});
+
 test("login rejects responses without a refresh token", async () => {
   const app = runtime({ fetch: async () => json({ ...user, token: jwt() }) });
   await assert.rejects(app.auth.signIn({ email: "x", password: "x" }), /inválida/);

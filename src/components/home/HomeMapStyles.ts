@@ -28,4 +28,15 @@ export const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: theme.spacing.xl,
   },
+  retryButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.xxxl,
+    marginTop: theme.spacing.md,
+  },
+  retryLabel: {
+    color: theme.colors.feedback.success,
+    fontSize: theme.typography.fontSize.metric,
+    fontWeight: theme.typography.fontWeight.bold,
+  },
 });

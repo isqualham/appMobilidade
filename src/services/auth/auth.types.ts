@@ -18,7 +18,7 @@ export interface User {
   activeProfile: UserProfile;
 }
 
-export interface AuthCredentials {
-  email: string;
-  password: string;
-}
+export type AuthCredentials = { password: string } & (
+  | { email: string; telefone?: never }
+  | { telefone: string; email?: never }
+);
