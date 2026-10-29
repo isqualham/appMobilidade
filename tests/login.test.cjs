@@ -16,8 +16,10 @@ const schema = compile('src/components/login/LoginScreen.schema.ts', require);
 for (const os of ['ios', 'android']) {
   test(`login by email and national phone preserves validation and navigation on ${os}`, async () => {
     let index = 0;
-    const slots = [], calls = [], routes = [];
-    const native = new Proxy({ Platform: { OS: os }, Keyboard: { dismiss() {} }, Alert: { alert() {} } }, { get: (o, k) => o[k] ?? k });
+    const slots = [], calls = [], routes = [], alerts = [];
+    let blocked = false;
+    const conflictMessage = "Esta conta já está conectada em outro dispositivo. Saia do dispositivo atual para entrar aqui.";
+    const native = new Proxy({ Platform: { OS: os }, Keyboard: { dismiss() {} }, Alert: { alert: (...args) => alerts.push(args) } }, { get: (o, k) => o[k] ?? k });
     const mocks = {
       react: { useState(initial) { const i = index++; if (!(i in slots)) slots[i] = initial; return [slots[i], v => { slots[i] = typeof v === 'function' ? v(slots[i]) : v; }]; } },
       'react-native': native,
@@ -26,7 +28,7 @@ for (const os of ['ios', 'android']) {
       'expo-router': { router: { replace: r => routes.push(r) } },
       '@react-native-vector-icons/lucide': { Lucide: 'Icon' },
       '../../theme': { colors: { neutral: { carbon: '#000' }, semantic: { actionPrimaryForeground: '#fff' } } },
-      '../../contexts/AuthContext': { useAuth: () => ({ signInWithCredentials: async c => calls.push(c) }) },
+      '../../contexts/AuthContext': { useAuth: () => ({ signInWithCredentials: async c => { calls.push(c); if (blocked) throw new Error(conflictMessage); } }) },
       './LoginScreen.schema': schema, '../../../assets/viau-logo.svg': 'Logo', './LoginScreenStyles': { styles: {} },
     };
     const { LoginScreen } = compile('src/components/login/LoginScreen.tsx', name => { assert.ok(name in mocks, name); return mocks[name]; });
@@ -54,6 +56,16 @@ for (const os of ['ios', 'android']) {
     field('Senha').onChangeText('short');
     await field('Entrar').onPress();
     assert.equal(calls.length, 3);
+    blocked = true;
+    field('Senha').onChangeText('test-password');
+    for (const input of ['person@example.com', '(65) 99999-1234']) {
+      field('E-mail ou telefone').onChangeText(input);
+      await field('Entrar').onPress();
+      assert.equal(alerts.at(-1)[1], conflictMessage);
+      assert.equal(field('Entrar').disabled, false);
+    }
+    assert.equal(alerts.length, 2);
+    assert.deepEqual(routes, ['/home', '/home', '/home']);
   });
 }
 

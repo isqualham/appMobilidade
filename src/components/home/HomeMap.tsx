@@ -1,3 +1,5 @@
+import { useDriverRouteAnchor } from "./useDriverRouteAnchor";
+import type { ActiveDriverRide } from "../../services/corrida/ofertas.service";
 import {
   forwardRef,
   useEffect,
@@ -48,26 +50,43 @@ type HomeMapProps = {
   isDriver?: boolean;
   isOnline?: boolean;
   contentInsetTop?: number;
+  contentInsetBottom?: number;
+  activeRide?: ActiveDriverRide | null;
 };
 
 export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
-  { isDriver = false, isOnline = false, contentInsetTop = 0 },
+  { isDriver = false, isOnline = false, contentInsetTop = 0, contentInsetBottom = 300, activeRide = null },
   ref,
 ) {
   const mapRef = useRef<MapView>(null);
   const routeRequestId = useRef(0);
+  const followCamera = useRef(true);
+  const fittedRide = useRef("");
+  const followedPosition = useRef<UserLocation | null>(null);
 
   const [location, setLocation] = useState<UserLocation | null>(null);
   const [selectedOrigin, setSelectedOrigin] = useState<MapOrigin | null>(null);
-  const [destination, setDestination] = useState<MapDestination | null>(null);
-  const [route, setRoute] = useState<RouteResult | null>(null);
+  const [passengerDestination, setDestination] = useState<MapDestination | null>(null);
+  const [routeState, setRouteState] = useState<{ key: string; result: RouteResult } | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [locationAttempt, setLocationAttempt] = useState(0);
 
-  const shouldTrackDriver = isDriver && isOnline;
+  const shouldTrackDriver = isDriver && (isOnline || Boolean(activeRide));
+  const rideTarget = activeRide?.status === "EM_ANDAMENTO" ? activeRide.destino : activeRide?.origem;
+  const targetLatitude = rideTarget?.latitude;
+  const targetLongitude = rideTarget?.longitude;
+  const targetAddress = rideTarget?.endereco;
+  const rideStatus = activeRide?.status;
+  const destination = useMemo<MapDestination | null>(() => {
+    if (!isDriver) return passengerDestination;
+    if (!rideStatus || !["ACEITA", "PRESTADOR_A_CAMINHO", "EM_ANDAMENTO"].includes(rideStatus) || targetLatitude === undefined || targetLongitude === undefined) return null;
+    return { latitude: targetLatitude, longitude: targetLongitude, name: rideStatus === "EM_ANDAMENTO" ? "Destino do passageiro" : "Embarque do passageiro", address: targetAddress ?? "" };
+  }, [isDriver, rideStatus, targetLatitude, targetLongitude, targetAddress, passengerDestination]);
+  const driverRouteKey = isDriver && destination ? `${activeRide?.id}/${rideStatus}/${targetLatitude}/${targetLongitude}/${locationAttempt}` : null;
+  const driverAnchor = useDriverRouteAnchor(location, driverRouteKey);
 
   // Obtém a localização inicial para abrir o mapa.
   useEffect(() => {
@@ -161,6 +180,7 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
     ref,
     () => ({
       centerOnUserLocation() {
+        followCamera.current = true;
         if (!location || !mapReady) return;
 
         const region: Region = {
@@ -185,7 +205,7 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
         routeRequestId.current += 1;
         setSelectedOrigin(null);
         setDestination(null);
-        setRoute(null);
+        setRouteState(null);
         setLoadingRoute(false);
         setRouteError(null);
 
@@ -206,7 +226,8 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
   );
 
   const routeOrigin: RouteCoordinate | null = useMemo(() => {
-    if (selectedOrigin) {
+    if (isDriver) return driverAnchor;
+    if (!isDriver && selectedOrigin) {
       return {
         latitude: selectedOrigin.latitude,
         longitude: selectedOrigin.longitude,
@@ -221,19 +242,22 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
     }
 
     return null;
-  }, [selectedOrigin, location]);
+  }, [selectedOrigin, location, isDriver, driverAnchor]);
+  const requestKey = `${driverRouteKey ?? "passenger"}/${routeOrigin?.latitude}/${routeOrigin?.longitude}/${destination?.latitude}/${destination?.longitude}`;
+  const route = routeState?.key === requestKey ? routeState.result : null;
 
-  // Calcula rotas apenas para o perfil Cliente.
+  // Reutiliza o roteamento para embarque do prestador e viagem do passageiro.
   useEffect(() => {
     const requestId = ++routeRequestId.current;
 
-    if (isDriver || routeOrigin === null || destination === null) {
-      setRoute(null);
+    if (routeOrigin === null || destination === null) {
+      setRouteState(null);
       setRouteError(null);
       setLoadingRoute(false);
       return;
     }
 
+    const controller = new AbortController();
     const origin = routeOrigin;
     const target: RouteCoordinate = {
       latitude: destination.latitude,
@@ -244,14 +268,14 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
 
     async function loadRoute() {
       setLoadingRoute(true);
-      setRoute(null);
+      setRouteState(null);
       setRouteError(null);
 
       try {
-        const result = await calculateRoute(origin, target);
+        const result = await calculateRoute(origin, target, controller.signal);
 
         if (active && requestId === routeRequestId.current) {
-          setRoute(result);
+          setRouteState({ key: requestKey, result });
         }
       } catch (err) {
         if (active && requestId === routeRequestId.current) {
@@ -272,19 +296,23 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
 
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [isDriver, routeOrigin, destination]);
+  }, [isDriver, routeOrigin, destination, locationAttempt, requestKey]);
 
-  // Ajusta a câmera à rota do Cliente.
+  // Enquadra a rota e reserva espaço para os cards.
   useEffect(() => {
-    if (isDriver || !destination || !mapReady || !mapRef.current) return;
+    if (!destination || !mapReady || !mapRef.current) return;
+    const framing = `${driverRouteKey ?? "passenger"}/${contentInsetTop}/${contentInsetBottom}`;
+    if (isDriver && (!followCamera.current || fittedRide.current === framing)) return;
 
     if (route?.coordinates.length) {
+      if (isDriver) fittedRide.current = framing;
       mapRef.current.fitToCoordinates(route.coordinates, {
         edgePadding: {
-          top: 120,
+          top: isDriver ? 24 : Math.max(120, contentInsetTop + 48),
           right: 55,
-          bottom: 300,
+          bottom: isDriver ? 24 : contentInsetBottom + 32,
           left: 55,
         },
         animated: true,
@@ -292,6 +320,7 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
       return;
     }
 
+    if (isDriver) return;
     mapRef.current.animateToRegion(
       {
         latitude: destination.latitude,
@@ -301,11 +330,14 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
       },
       800,
     );
-  }, [isDriver, destination, route, mapReady]);
+  }, [destination, route, mapReady, contentInsetTop, contentInsetBottom, isDriver, driverRouteKey]);
 
   // Segue o prestador somente enquanto ele está online.
   useEffect(() => {
-    if (!shouldTrackDriver || !location || !mapReady || !mapRef.current) {
+    const previous = followedPosition.current;
+    followedPosition.current = location;
+    if (!followCamera.current || !shouldTrackDriver || !location || !mapReady || !mapRef.current ||
+      (activeRide && (!previous || (previous.latitude === location.latitude && previous.longitude === location.longitude)))) {
       return;
     }
 
@@ -318,7 +350,7 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
       },
       500,
     );
-  }, [shouldTrackDriver, mapReady, location]);
+  }, [shouldTrackDriver, mapReady, location, activeRide]);
 
   if (error) {
     return (
@@ -366,10 +398,14 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
         style={styles.map}
         initialRegion={initialRegion}
         onMapReady={() => setMapReady(true)}
+        mapPadding={isDriver ? { top: contentInsetTop + 48, bottom: contentInsetBottom + 24, left: 24, right: 24 } : undefined}
+        onTouchStart={() => { if (isDriver) followCamera.current = false; }}
+        onPanDrag={() => { if (isDriver) followCamera.current = false; }}
         showsUserLocation={!isDriver}
         showsMyLocationButton={!isDriver}
       >
         {isDriver ? (
+          <>
           <Marker
             coordinate={{
               latitude: location.latitude,
@@ -379,6 +415,10 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
             description={isOnline ? "Posição GPS atual" : "Última localização obtida"}
             pinColor={colors.brand.primary}
           />
+          {destination && <Marker coordinate={destination} title={destination.name} description={destination.address} />}
+          {activeRide?.status === "EM_ANDAMENTO" && <Marker coordinate={activeRide.origem} title="Origem do passageiro" />}
+          {route && <Polyline coordinates={route.coordinates} strokeColor={colors.feedback.success} strokeWidth={5} />}
+          </>
         ) : (
           <>
             <Marker
@@ -411,6 +451,10 @@ export const HomeMap = forwardRef<HomeMapHandle, HomeMapProps>(function HomeMap(
         )}
       </MapView>
 
+      {isDriver && destination && (loadingRoute || routeError) && <View style={{ position: "absolute", top: contentInsetTop, left: 16, right: 70, backgroundColor: colors.neutral.white, padding: 8 }}>
+        <Text style={{ color: routeError ? colors.feedback.danger : colors.neutral.carbon }}>{loadingRoute ? "Calculando rota…" : routeError}</Text>
+        {routeError && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Tentar rota novamente" onPress={() => setLocationAttempt(attempt => attempt + 1)}><Text>Tentar novamente</Text></TouchableOpacity>}
+      </View>}
       {!isDriver && destination && (
         <View
           style={{

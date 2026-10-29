@@ -108,7 +108,7 @@ export function useDriverAvailability(user: User | null) {
       const vehicles = await getEligibleVehicles();
       if (!valid()) return;
       if (!vehicles.length) {
-        setError("Você precisa de um veículo ativo com categoria e tipo ativos para ficar online.");
+        setError("Você precisa de um veículo aprovado e ativo, com categoria e tipo ativos, para ficar online.");
         return;
       }
       await getUserLocation();
@@ -163,7 +163,7 @@ export function useDriverAvailability(user: User | null) {
       } else if (cause instanceof ApiError && cause.status === 400) {
         setError("Os dados de disponibilidade foram recusados. Atualize o status e selecione o veículo novamente.");
       } else if (cause instanceof ApiError && cause.status === 403) {
-        setError("Alteração não permitida. Confira sua aprovação e se o veículo, a categoria e o tipo estão ativos.");
+        setError("Alteração não permitida. Confira sua aprovação, a aprovação do veículo e se o veículo, a categoria e o tipo estão ativos.");
       } else if (cause instanceof ApiError && cause.status === 401) {
         setError("Sessão expirada. Entre novamente.");
       } else {

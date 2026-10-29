@@ -1,4 +1,6 @@
-import { useRef } from "react";
+import { VehicleCategory } from "./VehicleCategory";
+import { offerDiagnostic } from "../../services/offerDiagnostics";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator, Alert, Modal, ScrollView, Text, TouchableOpacity,
   useWindowDimensions, View,
@@ -13,6 +15,8 @@ import { colors, iconSizes, spacing } from "../../theme";
 import { HomeMap, type HomeMapHandle } from "./HomeMap";
 import { DriverNavigation } from "./DriverNavigation";
 import { driverStyles as styles } from "./DriverHomeStyles";
+import { DriverOfferCard } from "./DriverOfferCard";
+import { useDriverOffers } from "./useDriverOffers";
 import { useDriverAvailability } from "./useDriverAvailability";
 
 export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
@@ -27,6 +31,22 @@ export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
   const name = user?.name.trim().split(/\s+/)[0] || "prestador";
   const { isOnline, checking, known } = availability;
 
+  const offers = useDriverOffers(
+    isOnline && known && user?.statusAprovacao === "APROVADO" ? availability.selectedVehicle?.id : undefined,
+    user?.id, checking,
+  );
+
+  useEffect(() => {
+    offerDiagnostic({ stage: "state", online: isOnline, known,
+      approved: user?.statusAprovacao === "APROVADO", vehicleSelected: Boolean(availability.selectedVehicle?.id),
+      occupied: Boolean(offers.activeId), visible: isOnline && Boolean(offers.offer), verified: offers.verified });
+  }, [isOnline, known, user?.statusAprovacao, availability.selectedVehicle?.id, offers.activeId, offers.offer, offers.verified]);
+
+  const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
+  const [panelHeight, setPanelHeight] = useState(150);
+  const navigating = Boolean(offers.activeRide);
+  const expanded = Boolean(offers.activeId && expandedRideId === offers.activeId);
+
   function openSection(route: "/driver-services" | "/driver-earnings") {
     router.navigate(route);
   }
@@ -35,7 +55,8 @@ export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
     <View style={styles.container}>
       <StatusBar style="dark" />
       <View style={[styles.mapArea, { minHeight: insets.top + 160 }]}>
-        <HomeMap ref={mapRef} isDriver isOnline={isOnline} contentInsetTop={insets.top + 64} />
+        <View style={[styles.mapCanvas, { minHeight: insets.top + 100 }]}>
+        <HomeMap ref={mapRef} isDriver isOnline={isOnline} contentInsetTop={insets.top + 64} contentInsetBottom={navigating ? panelHeight : height * 0.28} activeRide={offers.activeRide} />
         <View style={[styles.topBar, { top: insets.top + spacing.xl }]} pointerEvents="box-none">
           <TouchableOpacity style={styles.roundButton} onPress={onOpenMenu} accessibilityRole="button" accessibilityLabel="Abrir menu">
             <Lucide name="menu" size={iconSizes.menu} color={colors.neutral.carbon} />
@@ -55,15 +76,20 @@ export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
           </TouchableOpacity>
         </View>
         <TouchableOpacity
-          style={[styles.roundButton, styles.recenter]} accessibilityRole="button"
+          style={[styles.roundButton, styles.recenter, navigating ? { bottom: panelHeight + spacing.lg } : isOnline && { top: insets.top + 80, bottom: undefined }]} accessibilityRole="button"
           accessibilityLabel="Centralizar mapa na minha localização"
           onPress={() => mapRef.current?.centerOnUserLocation()}
         >
           <Lucide name="locate" size={iconSizes.large} color={colors.neutral.carbon} />
         </TouchableOpacity>
+        </View>
+        {(isOnline || offers.activeId) && <View style={styles.offerOverlay} pointerEvents="box-none" onLayout={event => setPanelHeight(event.nativeEvent.layout.height)}>
+          <DriverOfferCard offers={offers} blocked={checking} maxHeight={height * (navigating ? 0.48 : 0.28)}
+            collapsed={navigating && !expanded} onToggle={navigating ? () => setExpandedRideId(expanded ? null : offers.activeId) : undefined} />
+        </View>}
       </View>
 
-      <View style={[styles.sheet, { maxHeight: height * 0.57 }]}>
+      {!navigating && <View style={[styles.sheet, { maxHeight: height * (isOnline || offers.activeId ? 0.3 : 0.57) }]}>
         <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
           <View style={styles.handle} />
           <View style={[styles.greetingRow, compact && styles.stackedRow]}>
@@ -74,8 +100,8 @@ export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
             <TouchableOpacity
               style={[styles.availabilityButton, checking && styles.buttonBusy]}
               accessibilityRole="button" accessibilityLabel={!known ? "Atualizar status" : isOnline ? "Ficar offline" : "Ficar online"}
-              accessibilityState={{ disabled: checking, busy: checking, selected: isOnline }}
-              disabled={checking} onPress={() => void (!known ? availability.refresh() : isOnline ? availability.goOffline() : availability.goOnline())}
+              accessibilityState={{ disabled: checking || offers.busy, busy: checking || offers.busy, selected: isOnline }}
+              disabled={checking || offers.busy} onPress={() => void (!known ? availability.refresh() : isOnline ? availability.goOffline() : availability.goOnline())}
             >
               {checking ? <ActivityIndicator color={colors.neutral.carbon} /> :
                 <Lucide name={isOnline ? "power" : "power-off"} size={iconSizes.large} color={colors.neutral.carbon} />}
@@ -83,7 +109,7 @@ export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
             </TouchableOpacity>
           </View>
           <Text style={styles.context}>
-            {!known ? "Consulte sua disponibilidade antes de alterá-la." : isOnline ? "Você está online. O recebimento de solicitações ainda não está disponível nesta tela." : "Selecione um veículo elegível para ficar online."}
+            {!known ? "Consulte sua disponibilidade antes de alterá-la." : isOnline ? "Você está online. Confira as ofertas para seu veículo no mapa." : "Selecione um veículo elegível para ficar online."}
           </Text>
           {availability.error && <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">{availability.error}</Text>}
 
@@ -118,7 +144,7 @@ export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
           </TouchableOpacity>
           <Text style={styles.emptyNote}>Resumo ainda indisponível</Text>
         </ScrollView>
-      </View>
+      </View>}
       <DriverNavigation active="home" />
 
       <Modal visible={availability.vehicleChoices.length > 0} transparent animationType="slide" onRequestClose={availability.cancelSelection}>
@@ -128,8 +154,10 @@ export function DriverHome({ onOpenMenu }: { onOpenMenu: () => void }) {
             <ScrollView>
               {availability.vehicleChoices.map((vehicle) => (
                 <TouchableOpacity key={vehicle.id} style={styles.vehicleOption} accessibilityRole="button" accessibilityLabel={`Selecionar ${vehicle.label}`} onPress={() => void availability.selectVehicle(vehicle.id)}>
-                  <Lucide name="car-front" size={iconSizes.large} color={colors.neutral.carbon} />
-                  <Text style={styles.vehicleLabel}>{vehicle.label}</Text>
+                  <View style={{ flex: 1 }}>
+                    {vehicle.categoriaNome && <VehicleCategory name={vehicle.categoriaNome} textStyle={styles.vehicleLabel} />}
+                    <Text style={styles.vehicleLabel}>{vehicle.label}</Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </ScrollView>

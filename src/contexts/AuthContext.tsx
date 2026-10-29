@@ -15,6 +15,7 @@ import {
   signIn,
 } from "../services/auth/auth.service";
 import {
+  SESSION_REPLACED_MESSAGE,
   assertSessionVersion,
   getSessionVersion,
   logoutSession,
@@ -90,7 +91,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setActiveProfileState("passenger");
   }, []);
 
-  useEffect(() => onSessionCleared(resetAuthentication), [resetAuthentication]);
+  useEffect(() => onSessionCleared(reason => {
+    resetAuthentication();
+    if (reason === "replaced") Alert.alert("Sessão encerrada", SESSION_REPLACED_MESSAGE);
+  }), [resetAuthentication]);
 
   const refreshUser = useCallback(async () => {
     const version = getSessionVersion();
@@ -226,6 +230,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   async function signOut(): Promise<void> {
+    if (user?.prestador) {
+      const version = getSessionVersion();
+      await logoutSession(true);
+      if (getSessionVersion() === version + 1) {
+        resetAuthentication();
+        router.replace("/login");
+      }
+      return;
+    }
     const pendingLogout = logoutSession();
     resetAuthentication();
     router.replace("/login");

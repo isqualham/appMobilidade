@@ -1,5 +1,8 @@
+import { offerDiagnostic } from "./offerDiagnostics";
 import { requestJson } from "./http";
 import {
+  isSessionReplacedResponse,
+  rejectReplacedSession,
   assertSessionVersion,
   getAccessToken,
   getSessionVersion,
@@ -71,7 +74,22 @@ export async function apiRequest<T>(
     normalizedPath.split("?")[0].replace(/\/+$/, ""),
   );
   const version = getSessionVersion();
-  let access = protectedRequest ? await getAccessToken(version) : null;
+  const basePath = normalizedPath.split("?")[0];
+  const endpoint = basePath === "/api/corrida/disponiveis" ? "offers" as const
+    : normalizedPath === "/api/corrida/ativa?papel=prestador" ? "active_driver_ride" as const
+      : basePath === "/api/categorias-veiculo" ? "categories" as const
+        : basePath === "/api/prestadores/disponibilidade" ? "availability" as const : undefined;
+  // Caminhos conhecidos apenas: não registrar host, cursor, IDs ou query arbitrária.
+  const diagnosticPath = endpoint === "offers" ? "/api/corrida/disponiveis?limite=50" + (normalizedPath.includes("&cursor=") ? "&cursor=[omitido]" : "")
+    : endpoint === "active_driver_ride" ? "/api/corrida/ativa?papel=prestador"
+      : endpoint === "categories" ? "/api/categorias-veiculo" : "/api/prestadores/disponibilidade";
+  let access: Awaited<ReturnType<typeof getAccessToken>> | null;
+  try {
+    access = protectedRequest ? await getAccessToken(version) : null;
+  } catch (error) {
+    if (endpoint) offerDiagnostic({ stage: "auth", endpoint, reason: "session_unavailable", authenticated: false });
+    throw error;
+  }
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (protectedRequest) assertSessionVersion(version);
@@ -81,20 +99,39 @@ export async function apiRequest<T>(
     headers.delete("Authorization");
     if (access) headers.set("Authorization", `Bearer ${access.token}`);
 
+    if (endpoint) offerDiagnostic({ stage: "http", endpoint, path: diagnosticPath, reason: "request", attempt: attempt + 1, authenticated: Boolean(access) });
     // Network failures propagate immediately, including for POST/PATCH requests.
     const { response, data } = await requestJson(normalizedPath, {
       ...options,
       headers,
+    }).catch(error => {
+      if (endpoint) offerDiagnostic({ stage: "http", endpoint, reason: "network_or_abort", authenticated: Boolean(access) });
+      throw error;
     });
+    if (endpoint) offerDiagnostic({ stage: "http", endpoint, path: diagnosticPath, attempt: attempt + 1, status: response.status, authenticated: Boolean(access) });
     if (protectedRequest) assertSessionVersion(version);
+    if (protectedRequest && isSessionReplacedResponse(response.status, data)) await rejectReplacedSession(version);
     if (response.status === 401 && access) {
       if (attempt === 0) {
-        access = await getAccessToken(version, access);
+        if (endpoint) offerDiagnostic({ stage: "auth", endpoint, reason: "refreshing" });
+        try { access = await getAccessToken(version, access); }
+        catch (error) {
+          if (endpoint) offerDiagnostic({ stage: "auth", endpoint, reason: "refresh_failed" });
+          throw error;
+        }
         continue;
       }
+      if (endpoint) offerDiagnostic({ stage: "auth", endpoint, reason: "rejected" });
       await rejectAccessToken(version, access);
     }
     if (!response.ok) {
+      // O bloqueio de login é uma recusa definitiva, sem refresh ou efeitos remotos.
+      if (basePath === "/api/auth/login" && response.status === 409 &&
+        data && typeof data === "object" && "codigo" in data &&
+        data.codigo === "SESSAO_ATIVA_EXISTENTE" && "erro" in data &&
+        typeof data.erro === "string" && data.erro.trim()) {
+        throw new ApiError(data.erro, response.status);
+      }
       throw new ApiError(
         extractErrorMessage(data) ?? "Não foi possível realizar a requisição.",
         response.status,

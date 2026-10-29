@@ -26,9 +26,11 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 // Load the real TypeScript modules in an isolated JS runtime. Only native storage
 // and HTTP are replaced; no added test dependencies and no real credentials/network.
-function runtime({ initial, store = new Map(), fetch, beforeWrite } = {}) {
+function runtime({ initial, store = new Map(), fetch, beforeWrite, development = false } = {}) {
   if (initial) store.set(SESSION_KEY, JSON.stringify(initial));
   const calls = [];
+  const diagnostics = [];
+  const alerts = [];
   const timers = new Set();
   const modules = new Map();
   const hookSlots = [];
@@ -74,7 +76,7 @@ function runtime({ initial, store = new Map(), fetch, beforeWrite } = {}) {
     async deleteItemAsync(key) { store.delete(key); },
   };
   const context = vm.createContext({
-    Headers, AbortController, atob, Date,
+    Headers, AbortController, atob, Date, __DEV__: development, console: { info: (...args) => diagnostics.push(args) },
     process: { env: { EXPO_PUBLIC_API_URL: "https://api.example.test" } },
     setTimeout: (fn) => { timers.add(fn); return fn; },
     clearTimeout: (fn) => timers.delete(fn),
@@ -91,11 +93,12 @@ function runtime({ initial, store = new Map(), fetch, beforeWrite } = {}) {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
     }).outputText;
     const requireLocal = (specifier) => {
+      if (specifier === "@react-native-async-storage/async-storage") return { __esModule: true, default: { removeItem: async key => store.delete(key) } };
       if (specifier === "expo-secure-store") return nativeStore;
       if (specifier === "react") return react;
       if (specifier === "react/jsx-runtime") return { jsx: (_type, props) => props };
       if (specifier === "react-native") return {
-        Alert: { alert() {} },
+        Alert: { alert: (...args) => alerts.push(args) },
         AppState: { currentState: "active", addEventListener: (_event, listener) => {
           appStateListeners.add(listener);
           return { remove: () => appStateListeners.delete(listener) };
@@ -115,7 +118,7 @@ function runtime({ initial, store = new Map(), fetch, beforeWrite } = {}) {
     api: load(path.join(root, "src/services/api.ts")),
     auth: load(path.join(root, "src/services/auth/auth.service.ts")),
     session: load(path.join(root, "src/services/auth/session.ts")),
-    calls, store,
+    calls, store, diagnostics, alerts,
     mountAuth: async () => {
       const { AuthProvider } = load(path.join(root, "src/contexts/AuthContext.tsx"));
       function render() {
@@ -474,10 +477,10 @@ test("AuthContext ignores late user data after switching accounts", async () => 
   context.unmount();
 });
 
-test("AuthContext logout clears UI before revocation finishes and preserves unrelated local data", async () => {
+test("passenger logout preserves unrelated ride data without cancellation", async () => {
   const gate = deferred();
   const app = runtime({ initial: pair(), fetch: async (url) =>
-    url.endsWith("/me") ? json(user) : gate.promise });
+    url.endsWith("/me") ? json({ ...user, prestador: false }) : gate.promise });
   app.store.set("unrelated-active-ride-reference", "ride-id");
   const context = await app.mountAuth();
   const logout = context.value().signOut();
@@ -511,3 +514,169 @@ test("existing phone-verification navigation is preserved after restoring a sess
   assert.equal(context.navigation.at(-1), "/autenticacao-telefone");
   context.unmount();
 });
+
+test("provider logout waits for API 204, deduplicates taps and then clears session", async () => {
+  const gate = deferred();
+  const app = runtime({ initial: pair(), fetch: async url => url.endsWith("/me") ? json(user) : gate.promise });
+  const context = await app.mountAuth();
+  const first = context.value().signOut(); const second = context.value().signOut();
+  await context.flush();
+  assert.equal(context.value().isAuthenticated, true);
+  assert.ok(JSON.parse(app.store.get(SESSION_KEY)).refreshToken);
+  assert.equal(app.calls.filter(c => c.path.endsWith("/logout")).length, 1);
+  gate.resolve(new Response(null, { status: 204 }));
+  await Promise.all([first, second]); await context.flush();
+  assert.equal(context.value().isAuthenticated, false); assert.equal(app.store.get(SESSION_KEY), "null");
+  assert.equal(app.calls.some(c => c.path.includes("cancelar")), false); context.unmount();
+});
+for (const reason of ["network", "http", "unexpected-success"]) {
+  test(`provider logout failure ${reason} preserves session for explicit retry`, async () => {
+    const stored = pair(); let fail = true;
+    const app = runtime({ initial: stored, fetch: async url => {
+      if (url.endsWith("/me")) return json(user);
+      if (!fail) return new Response(null, { status: 204 });
+      if (reason === "network") throw new TypeError("lost response");
+      return json({}, reason === "http" ? 500 : 200);
+    } });
+    const context = await app.mountAuth();
+    await assert.rejects(context.value().signOut(), /tente sair novamente/); await context.flush();
+    assert.equal(context.value().isAuthenticated, true); assert.deepEqual(JSON.parse(app.store.get(SESSION_KEY)), stored);
+    // Do not rotate a possibly revoked refresh after an ambiguous logout response.
+    await assert.rejects(app.api.apiRequest("/protected"), /tente sair novamente/);
+    fail = false; await context.value().signOut(); await context.flush();
+    assert.equal(context.value().isAuthenticated, false); context.unmount();
+  });
+}
+test("provider logout waits for current refresh and revokes the rotated token", async () => {
+  const gate = deferred();
+  const app = runtime({ initial: pair(-1), fetch: async (url) => {
+    if (url.endsWith("/refresh")) return gate.promise;
+    if (url.endsWith("/logout")) return new Response(null, { status: 204 });
+    return json({ ok: true });
+  } });
+  const read = app.session.getAccessToken(app.session.getSessionVersion()); await tick();
+  const logout = app.session.logoutSession(true); await tick();
+  assert.equal(app.calls.filter(c => c.path.endsWith("/logout")).length, 0);
+  gate.resolve(json(pair(3600, "rotated-for-logout"))); await read; await logout;
+  const call = app.calls.find(c => c.path.endsWith("/logout"));
+  assert.equal(JSON.parse(call.body).refreshToken, "rotated-for-logout"); assert.equal(app.store.get(SESSION_KEY), "null");
+});
+test("late provider logout cannot erase a newly signed-in account", async () => {
+  const gate = deferred(); const next = pair(3600, "new-account");
+  const app = runtime({ initial: pair(), fetch: async url => url.endsWith("/logout") ? gate.promise : json({ ...user, id: "user-2", ...next }) });
+  const logout = app.session.logoutSession(true); await tick();
+  await app.auth.signIn({ email: "other@example.com", password: "password" });
+  gate.resolve(new Response(null, { status: 204 })); await assert.rejects(logout, /sessão foi alterada/);
+  assert.deepEqual(JSON.parse(app.store.get(SESSION_KEY)), next);
+});
+test("offers use the current account JWT and no vehicle query parameter", async () => {
+  const current = pair(3600, "provider-refresh");
+  const app = runtime({ initial: current, fetch: async (_url, options) => {
+    assert.equal(options.headers.get("Authorization"), `Bearer ${current.token}`);
+    return json({ corridas: [], proximoCursor: null });
+  } });
+  await app.api.apiRequest("/api/corrida/disponiveis?limite=50");
+  assert.equal(app.calls.length, 1);
+});
+for (const status of [200, 401, 403, 409]) {
+  test(`development offer diagnostics report HTTP ${status} without credentials`, async () => {
+    const current = pair();
+    const app = runtime({ initial: current, development: true, fetch: async () => json({ message: "private@example.com" }, status) });
+    try { await app.api.apiRequest("/api/corrida/disponiveis?limite=50"); } catch { /* Expected rejection for error statuses. */ }
+    const logs = JSON.stringify(app.diagnostics);
+    assert.match(logs, new RegExp(`"status":${status}`));
+    assert.doesNotMatch(logs, /private@example|refresh-original|signature|Authorization/);
+  });
+}
+test("offer network failure has a safe diagnostic and does not report HTTP success", async () => {
+  const app = runtime({ initial: pair(), development: true, fetch: async () => { throw new Error("secret-private-error"); } });
+  await assert.rejects(app.api.apiRequest("/api/corrida/disponiveis?limite=50"));
+  const logs = JSON.stringify(app.diagnostics);
+  assert.match(logs, /network_or_abort/); assert.doesNotMatch(logs, /secret|"status":200/);
+});
+test("offer URL diagnostics redact opaque cursors and report attempts", async () => {
+  const app = runtime({ initial: pair(), development: true, fetch: async () => json({ corridas: [], proximoCursor: null }) });
+  await app.api.apiRequest("/api/corrida/disponiveis?limite=50&cursor=private-cursor");
+  const events = app.diagnostics.map(entry => entry[1]);
+  assert.ok(events.some(e => e.path === "/api/corrida/disponiveis?limite=50&cursor=[omitido]" && e.reason === "request" && e.attempt === 1));
+  assert.ok(events.some(e => e.status === 200));
+  assert.doesNotMatch(JSON.stringify(events), /private-cursor/);
+});
+const replacedMessage = "Sua conta foi acessada em outro dispositivo.";
+test("replaced session clears only local tokens/private history with one alert and redirect", async () => {
+  const gate = deferred(); let secured = 0;
+  const app = runtime({ initial: pair(), fetch: async url => {
+    if (url.endsWith("/me")) return json(user);
+    secured++; await gate.promise; return json({ mensagem: replacedMessage }, 401);
+  } });
+  app.store.set("@viau/destinos-recentes", "private-address"); app.store.set("preference", "preserve");
+  const context = await app.mountAuth();
+  const all = Promise.allSettled([app.api.apiRequest("/one"), app.api.apiRequest("/two")]); await tick(); gate.resolve(); await all; await context.flush();
+  assert.equal(secured, 2); assert.equal(app.store.get(SESSION_KEY), "null"); assert.equal(app.store.has("@viau/destinos-recentes"), false);
+  assert.equal(app.store.get("preference"), "preserve"); assert.equal(context.value().user, null);
+  assert.equal(app.alerts.length, 1); assert.equal(app.alerts[0][1], replacedMessage);
+  assert.equal(context.navigation.filter(route => route === "/login").length, 1);
+  assert.equal(app.calls.some(c => /refresh|logout|cancelar|disponibilidade/.test(c.path)), false); context.unmount();
+});
+test("late replaced-session response cannot clear a newly signed-in account", async () => {
+  const gate = deferred(); const next = pair(3600, "new-session");
+  const app = runtime({ initial: pair(), fetch: async url => url.endsWith("/login") ? json({ ...user, ...next }) : gate.promise });
+  const pending = app.api.apiRequest("/protected"); await tick();
+  await app.auth.signIn({ email: "new@example.com", password: "password" });
+  gate.resolve(json({ erro: replacedMessage }, 401)); await assert.rejects(pending, /sessão foi alterada/);
+  assert.deepEqual(JSON.parse(app.store.get(SESSION_KEY)), next); assert.equal(app.alerts.length, 0);
+});
+test("replaced response from proactive refresh on reopen shows message without further refresh/logout", async () => {
+  const app = runtime({ initial: pair(-1), fetch: async () => json({ erro: replacedMessage }, 401) });
+  const context = await app.mountAuth();
+  assert.equal(app.calls.length, 1); assert.equal(app.calls[0].path, "/api/auth/refresh");
+  assert.equal(context.value().user, null); assert.equal(app.alerts.length, 1); assert.equal(app.alerts[0][1], replacedMessage);
+  assert.equal(app.store.get(SESSION_KEY), "null"); context.unmount();
+});
+test("in-flight refresh cannot restore replaced session or call logout on late rotation", async () => {
+  const gate = deferred(); const refresh = deferred();
+  const app = runtime({ initial: pair(), fetch: async url => {
+    if (url.endsWith("/explicit")) return gate.promise;
+    if (url.endsWith("/refresh")) return refresh.promise;
+    return json({ erro: "expired" }, 401);
+  } });
+  const explicit = app.api.apiRequest("/explicit"); await tick();
+  const ordinary = app.api.apiRequest("/ordinary"); await tick();
+  gate.resolve(json({ message: replacedMessage }, 401)); await assert.rejects(explicit);
+  refresh.resolve(json(pair(3600, "late-rotation"))); await assert.rejects(ordinary);
+  assert.equal(app.store.get(SESSION_KEY), "null"); assert.equal(app.calls.some(c => c.path.endsWith("/logout")), false);
+});
+test("pending private storage write is erased and stale writes are rejected", async () => {
+  const responseGate = deferred(); const writeGate = deferred();
+  const app = runtime({ initial: pair(), fetch: async () => responseGate.promise });
+  await app.session.readSession(); const version = app.session.getSessionVersion();
+  const response = assert.rejects(app.api.apiRequest("/protected")); await tick();
+  const write = assert.rejects(app.session.withSessionStorage(version, async () => {
+    await writeGate.promise; app.store.set("@viau/destinos-recentes", "old-address");
+  }));
+  await tick(); responseGate.resolve(json({ erro: replacedMessage }, 401)); await tick();
+  writeGate.resolve(); await Promise.all([response, write]);
+  assert.equal(app.store.has("@viau/destinos-recentes"), false);
+  await assert.rejects(app.session.withSessionStorage(version, async () => app.store.set("@viau/destinos-recentes", "stale")));
+});
+test("replacement text on non-401 response does not revoke local session", async () => {
+  const stored = pair(); const app = runtime({ initial: stored, fetch: async () => json({ mensagem: replacedMessage }, 403) });
+  await assert.rejects(app.api.apiRequest("/protected"));
+  assert.deepEqual(JSON.parse(app.store.get(SESSION_KEY)), stored); assert.equal(app.calls.length, 1);
+});
+
+for (const credentials of [{ email: "teste@example.com", password: "password" }, { telefone: "+5565999991234", password: "password" }]) {
+  test(`409 sessão existente bloqueia login por ${credentials.telefone ? "telefone" : "email"} sem sessão ou efeitos remotos`, async () => {
+    const message = "Esta conta já está conectada em outro dispositivo. Saia do dispositivo atual para entrar aqui.";
+    const app = runtime({ fetch: async () => json({ codigo: "SESSAO_ATIVA_EXISTENTE", erro: message, message: "Mensagem genérica", ...pair() }, 409) });
+    const context = await app.mountAuth();
+    await assert.rejects(context.value().signInWithCredentials(credentials), error => error.status === 409 && error.message === message);
+    await context.flush();
+    assert.equal(context.value().isAuthenticated, false);
+    assert.equal(context.value().user, null);
+    assert.equal(JSON.parse(app.store.get(SESSION_KEY)), null);
+    assert.deepEqual(app.calls.map(call => call.path), ["/api/auth/login"]);
+    assert.ok(context.navigation.every(route => route !== "/home"));
+    context.unmount();
+  });
+}

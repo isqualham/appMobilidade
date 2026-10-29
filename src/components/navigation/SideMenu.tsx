@@ -1,5 +1,8 @@
-import { type ComponentProps } from "react";
+import { cancelPassengerSearch, getActivePassengerRide } from "../../services/corrida/passageiro.service";
+import { assertSessionVersion, getSessionVersion } from "../../services/auth/session";
+import { useRef, type ComponentProps } from "react";
 import {
+  Alert,
   Image,
   Modal,
   ScrollView,
@@ -71,13 +74,58 @@ export function SideMenu({ visible, onClose }: SideMenuProps) {
     onClose();
   }
 
-  async function handleSignOut() {
+  const logoutBusy = useRef(false);
+
+  async function finishSignOut() {
     onClose();
 
     try {
       await signOut();
-    } catch (error) {
-      console.error("Erro ao sair da conta:", error);
+    } catch {
+      Alert.alert("Logout não confirmado", "Não foi possível confirmar a saída na API. Sua disponibilidade pode continuar Online. Verifique a conexão e tente novamente.", [
+        { text: "Fechar", style: "cancel" },
+        { text: "Tentar novamente", onPress: () => void handleSignOut() },
+      ]);
+    }
+  }
+
+  async function handleSignOut() {
+    if (logoutBusy.current) return;
+    logoutBusy.current = true;
+    const version = getSessionVersion();
+    try {
+      const active = await getActivePassengerRide();
+      assertSessionVersion(version);
+      if (active?.status !== "SOLICITADA") {
+        await finishSignOut(); logoutBusy.current = false; return;
+      }
+      let choiceTaken = false;
+      const leave = async (cancel: boolean) => {
+        if (choiceTaken) return;
+        choiceTaken = true;
+        try {
+          assertSessionVersion(version);
+          if (cancel) {
+            const result = await cancelPassengerSearch(active.id);
+            assertSessionVersion(version);
+            if (!result.cancelled || result.active) {
+              Alert.alert("Corrida atualizada", "O status mudou ou ainda existe corrida ativa. Confira a Home antes de sair.");
+              return;
+            }
+          }
+          await finishSignOut();
+        } catch {
+          Alert.alert("Saída interrompida", "Não foi possível confirmar o cancelamento. Confira a corrida na Home e tente novamente.");
+        } finally { logoutBusy.current = false; }
+      };
+      Alert.alert("Busca em andamento", "Deseja cancelar a busca antes de sair? Sair sem cancelar mantém a corrida ativa.", [
+        { text: "Continuar no app", style: "cancel", onPress: () => { logoutBusy.current = false; } },
+        { text: "Sair sem cancelar", onPress: () => void leave(false) },
+        { text: "Cancelar busca e sair", style: "destructive", onPress: () => void leave(true) },
+      ], { cancelable: false });
+    } catch {
+      logoutBusy.current = false;
+      Alert.alert("Não foi possível consultar a corrida", "Confira a conexão e tente sair novamente. Nenhuma corrida foi cancelada.");
     }
   }
 

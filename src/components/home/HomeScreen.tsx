@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Text, TouchableOpacity, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
@@ -10,6 +10,9 @@ import { styles } from "./HomeScreenStyles";
 import { HomeBottomNavigation } from "./HomeBottomNavigation";
 import { DriverHome } from "./DriverHome";
 import { SideMenu } from "../../components/navigation/SideMenu";
+
+import { PassengerRidePanel } from "./PassengerRidePanel";
+import { tripSchema } from "../../services/corrida/passageiro.service";
 
 const ICON_SIZE = 23;
 const ICON_COLOR = "#475569";
@@ -39,8 +42,8 @@ export function HomeScreen() {
   const hasOrigin =
     typeof originName === "string" &&
     originName.trim().length > 0 &&
-    params.originLatitude !== undefined &&
-    params.originLongitude !== undefined &&
+    typeof params.originLatitude === "string" && params.originLatitude.trim() !== "" &&
+    typeof params.originLongitude === "string" && params.originLongitude.trim() !== "" &&
     Number.isFinite(originLatitude) &&
     Number.isFinite(originLongitude) &&
     originLatitude >= -90 &&
@@ -56,8 +59,8 @@ export function HomeScreen() {
   const hasDestination =
     typeof destinationName === "string" &&
     typeof destinationAddress === "string" &&
-    params.destinationLatitude !== undefined &&
-    params.destinationLongitude !== undefined &&
+    typeof params.destinationLatitude === "string" && params.destinationLatitude.trim() !== "" &&
+    typeof params.destinationLongitude === "string" && params.destinationLongitude.trim() !== "" &&
     Number.isFinite(latitude) &&
     Number.isFinite(longitude) &&
     latitude >= -90 &&
@@ -92,6 +95,15 @@ export function HomeScreen() {
     latitude,
     longitude,
   ]);
+
+  const trip = useMemo(() => {
+    if (!hasOrigin || !hasDestination) return null;
+    const result = tripSchema.safeParse({
+      origemEndereco: originName, origemLatitude: originLatitude, origemLongitude: originLongitude,
+      destinoEndereco: destinationAddress, destinoLatitude: latitude, destinoLongitude: longitude,
+    });
+    return result.success ? result.data : null;
+  }, [hasOrigin, hasDestination, originName, originLatitude, originLongitude, destinationAddress, latitude, longitude]);
 
   function handleNavigation(label: string) {
     switch (label) {
@@ -162,6 +174,7 @@ export function HomeScreen() {
         </TouchableOpacity>
       </View>
 
+      <PassengerRidePanel key={user?.id} trip={trip}>
       <View style={styles.bottomSheet}>
         <View style={styles.handle} />
 
@@ -238,6 +251,8 @@ export function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      </PassengerRidePanel>
 
       <HomeBottomNavigation items={navigationItems} activeLabel="Início" onSelect={handleNavigation} />
 

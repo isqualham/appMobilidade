@@ -128,9 +128,9 @@ test('service filters vehicles using active category/type catalog and validates 
   const runtime = createMobileRuntime({ realAvailabilityService: true, apiRequest: async (route, options) => {
     requests.push({ route, options });
     if (route === '/api/veiculos') return { veiculos: [
-      { id: vehicle.id, marca: 'Marca', modelo: 'Modelo', placa: 'ABC1D23', ativo: true, categoriaVeiculoId: category },
-      { id: vehicle.id, marca: 'Marca', modelo: 'Inativo', placa: 'ABC1D23', ativo: false, categoriaVeiculoId: category },
-      { id: vehicle.id, marca: 'Marca', modelo: 'Categoria inativa', placa: 'ABC1D23', ativo: true, categoriaVeiculoId: vehicle.id },
+      { id: vehicle.id, marca: 'Marca', modelo: 'Modelo', placa: 'ABC1D23', statusAprovacao: 'APROVADO', ativo: true, categoriaVeiculoId: category },
+      { id: vehicle.id, marca: 'Marca', modelo: 'Inativo', placa: 'ABC1D23', statusAprovacao: 'APROVADO', ativo: false, categoriaVeiculoId: category },
+      { id: vehicle.id, marca: 'Marca', modelo: 'Categoria inativa', placa: 'ABC1D23', statusAprovacao: 'APROVADO', ativo: true, categoriaVeiculoId: vehicle.id },
     ] };
     if (route === '/api/categorias-veiculo') return { categorias: [{ id: category, ativo: true }] };
     return invalid ? { status: 'ONLINE', veiculoId: null, versao: -1 } : offline;
@@ -166,4 +166,45 @@ test('failed reconciliation after a write leaves status unknown, never invents o
   await render().goOffline();
   assert.equal(render().known, false);
   assert.equal(runtime.calls.updates.length, 1);
+});
+
+for (const [status, message] of [
+  ['PENDENTE', /pendente de aprovação/],
+  ['REJEITADO', /veículo rejeitado/],
+  ['SUSPENSO', /veículo suspenso/],
+  [undefined, /validar a lista/],
+  ['DESCONHECIDO', /validar a lista/],
+]) {
+  test(`vehicle ${status} cannot go online and explains the reason`, async () => {
+    const writes = [];
+    const { render } = await setup({ realAvailabilityService: true, apiRequest: async (route, options) => {
+      if (options?.method === 'PATCH') writes.push(options);
+      if (route === '/api/veiculos') return { veiculos: [{
+        id: vehicle.id, marca: 'Marca', modelo: 'Modelo', placa: 'ABC1D23',
+        ativo: true, categoriaVeiculoId: vehicle.id, statusAprovacao: status,
+      }] };
+      if (route === '/api/categorias-veiculo') return { categorias: [{ id: vehicle.id, ativo: true }] };
+      return offline;
+    } });
+    await render().goOnline();
+    assert.equal(render().isOnline, false);
+    assert.equal(render().vehicleChoices.length, 0);
+    assert.match(render().error, message);
+    await render().selectVehicle(vehicle.id);
+    assert.equal(writes.length, 0);
+  });
+}
+
+test('mixed approval statuses expose only approved eligible vehicles for selection', async () => {
+  const runtime = createMobileRuntime({ realAvailabilityService: true, apiRequest: async route => {
+    if (route === '/api/veiculos') return { veiculos: ['APROVADO', 'PENDENTE', 'REJEITADO', 'SUSPENSO'].map((statusAprovacao, i) => ({
+      id: `b12a0000-0000-4000-8000-00000000002${i}`, marca: 'Marca', modelo: statusAprovacao,
+      placa: 'ABC1D23', ativo: true, categoriaVeiculoId: vehicle.id, statusAprovacao,
+    })) };
+    return { categorias: [{ id: vehicle.id, ativo: true }] };
+  } });
+  const service = runtime.load('src/services/prestador/disponibilidade.service.ts');
+  const vehicles = await service.getEligibleVehicles();
+  assert.equal(vehicles.length, 1);
+  assert.equal(vehicles[0].id, 'b12a0000-0000-4000-8000-000000000020');
 });

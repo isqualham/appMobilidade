@@ -20,6 +20,8 @@ function createMobileRuntime(options = {}) {
   const calls = { routes: [], alerts: [], getAvailability: 0, updates: [], vehicles: 0, activeRide: 0, restore: 0, location: 0, watch: 0, stopWatch: 0 };
   const slots = [];
   const events = new Set();
+  const focusEffects = new Set();
+  const diagnostics = [];
   const sessionEvents = new Set();
   const cache = new Map();
   let index = 0;
@@ -50,7 +52,7 @@ function createMobileRuntime(options = {}) {
     StyleSheet: { create: (value) => value, absoluteFill: { position: "absolute", inset: 0 } },
     useWindowDimensions: () => options.size ?? { width: 390, height: 844, fontScale: 1 },
     Alert: { alert: (...args) => calls.alerts.push(args) },
-    AppState: { addEventListener: (_event, fn) => { events.add(fn); return { remove: () => events.delete(fn) }; } },
+    AppState: { currentState: "active", addEventListener: (_event, fn) => { events.add(fn); return { remove: () => events.delete(fn) }; } },
   });
   const mocks = {
     react,
@@ -59,7 +61,10 @@ function createMobileRuntime(options = {}) {
     "expo-status-bar": { StatusBar: "StatusBar" },
     "expo-router": {
       router: { navigate: (route) => calls.routes.push(route), push: (route) => calls.routes.push(route) },
-      useFocusEffect: fn => react.useEffect(fn, [fn]),
+      useFocusEffect: fn => react.useEffect(() => {
+        const entry = { fn, cleanup: fn() }; focusEffects.add(entry);
+        return () => { entry.cleanup?.(); focusEffects.delete(entry); };
+      }, [fn]),
       Redirect: "Redirect", useLocalSearchParams: () => options.params ?? {},
     },
     "react-native-safe-area-context": { useSafeAreaInsets: () => options.insets ?? { top: 47, bottom: 34, left: 0, right: 0 } },
@@ -67,10 +72,15 @@ function createMobileRuntime(options = {}) {
     "react-native-maps": { __esModule: true, default: "NativeMap", Marker: "Marker", Polyline: "Polyline" },
     "expo-location": {
       Accuracy: { High: 1 }, requestForegroundPermissionsAsync: async () => ({ status: "granted" }),
-      watchPositionAsync: async () => { calls.watch++; return { remove: () => { calls.stopWatch++; } }; },
+      watchPositionAsync: async (_settings, callback) => { options.onWatch?.(callback); calls.watch++; return { remove: () => { calls.stopWatch++; } }; },
     },
   };
-  const context = vm.createContext({ Date, Error, setTimeout, clearTimeout });
+  const timers = new Map();
+  let nextTimer = 0;
+  const context = vm.createContext({ Date, Error, AbortController, fetch: options.fetch, __DEV__: options.development ?? false, console: { info: (...args) => diagnostics.push(args) },
+    setTimeout: options.fakeTimers ? (fn) => { const id = ++nextTimer; timers.set(id, fn); return id; } : setTimeout,
+    clearTimeout: options.fakeTimers ? (id) => timers.delete(id) : clearTimeout,
+  });
   function load(relative) {
     const filename = path.isAbsolute(relative) ? relative : path.join(root, relative);
     if (cache.has(filename)) return cache.get(filename).exports;
@@ -81,6 +91,11 @@ function createMobileRuntime(options = {}) {
     const localRequire = (name) => {
       if (name in mocks) return mocks[name];
       if (name === "zod") return require("zod");
+      if (name.endsWith("/passageiro.service") && options.passengerService) return options.passengerService;
+      if (name === "./PassengerRidePanel" && !options.realPassengerPanel) return { PassengerRidePanel: ({ children }) => children };
+      if (name === "./usePassengerRide" && options.passengerRide) return { usePassengerRide: () => options.passengerRide };
+      if (name.endsWith("/ofertas.service") && options.offersService) return options.offersService;
+      if (name === "./useDriverOffers" && !options.realOffers) return { useDriverOffers: () => options.offers ?? ({ offer: null, activeId: null, loading: false, busy: false, verified: true, error: null, refresh: async () => {}, accept: async () => {}, refuse: async () => {} }) };
       if (name.endsWith("/api")) return { ApiError, apiRequest: options.apiRequest };
       if (name.endsWith("/disponibilidade.service") && !options.realAvailabilityService) return {
         getAvailability: async () => { calls.getAvailability++; return options.getAvailability ? options.getAvailability() : { status: "OFFLINE", veiculoId: null, versao: 0 }; },
@@ -88,12 +103,14 @@ function createMobileRuntime(options = {}) {
         updateAvailability: async change => { calls.updates.push(JSON.parse(JSON.stringify(change))); return options.updateAvailability ? options.updateAvailability(change) : { ...change, veiculoId: change.veiculoId ?? null, versao: change.versao + 1 }; },
         hasActiveRide: async () => { calls.activeRide++; return options.activeRide ? options.activeRide() : false; },
       };
-      if (name.endsWith("/AuthContext")) return { useAuth: () => ({ user, activeProfile: options.profile ?? "driver", canUseProviderProfile: options.approved ?? true }) };
+      if (name.endsWith("/AuthContext")) return { useAuth: () => ({ user, activeProfile: options.profile ?? "driver", canUseProviderProfile: options.approved ?? true, signOut: options.signOut ?? (async () => {}) }) };
       if (name.endsWith("/auth.service")) return { restoreSession: async () => { calls.restore++; return options.restore ? options.restore() : user; } };
       if (name.endsWith("/auth/session")) return {
         getSessionVersion: () => session,
+        assertSessionVersion: expected => { if (expected !== session) throw new Error("Session changed"); },
         onSessionCleared: (fn) => { sessionEvents.add(fn); return () => sessionEvents.delete(fn); },
       };
+      if (name.endsWith("/route.service") && options.route) return { calculateRoute: options.route, formatDistance: value => String(value), formatDuration: value => String(value) };
       if (name.endsWith("/location.service")) return { getUserLocation: async () => {
         calls.location++; return options.location ? options.location() : { latitude: -16.07, longitude: -57.68 };
       } };
@@ -109,9 +126,12 @@ function createMobileRuntime(options = {}) {
     return module.exports;
   }
   return {
-    load, calls,
+    load, calls, diagnostics,
+    blur() { focusEffects.forEach(entry => { entry.cleanup?.(); entry.cleanup = undefined; }); },
+    focus() { focusEffects.forEach(entry => { entry.cleanup = entry.fn(); }); },
+    runTimers() { const pending = [...timers.values()]; timers.clear(); pending.forEach(fn => fn()); },
     render(fn) { index = 0; const result = fn(); const pending = effects; effects = []; pending.forEach((effect) => effect()); return result; },
-    appState: (state) => events.forEach((fn) => fn(state)),
+    appState: (state) => { native.AppState.currentState = state; events.forEach((fn) => fn(state)); },
     logout() { session++; sessionEvents.forEach((fn) => fn()); },
     unmount() { slots.forEach((slot) => slot?.cleanup?.()); },
   };

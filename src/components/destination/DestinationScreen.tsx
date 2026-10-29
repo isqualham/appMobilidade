@@ -1,3 +1,4 @@
+import { getSessionVersion, onSessionCleared, withSessionStorage, RECENT_DESTINATIONS_KEY } from "../../services/auth/session";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,7 +22,7 @@ import {
 import { getUserLocation } from "../../services/location/location.service";
 import { styles } from "./DestinationStyles";
 
-const HISTORY_KEY = "@viau/destinos-recentes";
+const HISTORY_KEY = RECENT_DESTINATIONS_KEY;
 const MAX_RECENT_DESTINATIONS = 10;
 
 const ICON_SIZE = 20;
@@ -98,25 +99,34 @@ export function DestinationScreen() {
   const [originError, setOriginError] = useState("");
   const [historyLoaded, setHistoryLoaded] = useState(false);
 
+  useEffect(() => onSessionCleared(() => {
+    setDestination(""); setCurrentLocation(""); setOriginQuery("");
+    setOriginCoordinates(null); setSelectedOrigin(null); setSelectedDestination(null);
+    setResults([]); setOriginResults([]); setRecentDestinations([]);
+  }), []);
+
   const saveToHistory = useCallback(async (item: DestinationResult) => {
+    const version = getSessionVersion();
     try {
-      const stored = await AsyncStorage.getItem(HISTORY_KEY);
-      const previous: DestinationResult[] = stored ? JSON.parse(stored) : [];
+      await withSessionStorage(version, async () => {
+        const stored = await AsyncStorage.getItem(HISTORY_KEY);
+        const previous: DestinationResult[] = stored ? JSON.parse(stored) : [];
 
-      const updated = [
-        item,
-        ...previous.filter(
-          (recent) =>
-            recent.id !== item.id &&
-            !(
-              recent.latitude === item.latitude &&
-              recent.longitude === item.longitude
-            ),
-        ),
-      ].slice(0, MAX_RECENT_DESTINATIONS);
+        const updated = [
+          item,
+          ...previous.filter(
+            (recent) =>
+              recent.id !== item.id &&
+              !(
+                recent.latitude === item.latitude &&
+                recent.longitude === item.longitude
+              ),
+          ),
+        ].slice(0, MAX_RECENT_DESTINATIONS);
 
-      setRecentDestinations(updated);
-      await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+        setRecentDestinations(updated);
+        await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+      });
     } catch {
       setError("Não foi possível salvar o destino recente.");
     }
@@ -126,6 +136,7 @@ export function DestinationScreen() {
     let active = true;
 
     async function loadCurrentLocation() {
+      const version = getSessionVersion();
       try {
         const location = await getUserLocation();
         const address = await reverseGeocodeLocation(
@@ -133,9 +144,10 @@ export function DestinationScreen() {
           location.longitude,
         );
 
-        if (!active) return;
+        if (!active || version !== getSessionVersion()) return;
 
-        setCurrentLocation(address);
+        if (version !== getSessionVersion()) return;
+      setCurrentLocation(address);
         setOriginCoordinates({
           latitude: location.latitude,
           longitude: location.longitude,
@@ -159,7 +171,7 @@ export function DestinationScreen() {
 
     async function loadHistory() {
       try {
-        const stored = await AsyncStorage.getItem(HISTORY_KEY);
+        const stored = await withSessionStorage(getSessionVersion(), () => AsyncStorage.getItem(HISTORY_KEY));
 
         if (stored) {
           const parsed: unknown = JSON.parse(stored);
@@ -236,6 +248,7 @@ export function DestinationScreen() {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleSearch(mode: SearchMode = searchMode) {
+    const version = getSessionVersion();
     Keyboard.dismiss();
 
     const query = mode === "origin" ? originQuery.trim() : destination.trim();
@@ -272,6 +285,7 @@ export function DestinationScreen() {
         location.longitude,
       );
 
+      if (version !== getSessionVersion()) return;
       if (mode === "origin") {
         setOriginResults(found);
 
@@ -359,6 +373,7 @@ export function DestinationScreen() {
   }
 
   async function handleUseCurrentLocation() {
+    const version = getSessionVersion();
     setSelectedOrigin(null);
     setOriginEditing(false);
     setOriginQuery("");
@@ -374,6 +389,7 @@ export function DestinationScreen() {
         location.longitude,
       );
 
+      if (version !== getSessionVersion()) return;
       setCurrentLocation(address);
       setOriginCoordinates({
         latitude: location.latitude,
